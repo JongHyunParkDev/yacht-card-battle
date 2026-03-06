@@ -1,0 +1,48 @@
+{
+  "name": "yacht-card-battle",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Yacht card battle game using Phaser, Electron, and Capacitor",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:web\" \"npm run dev:electron\"",
+    "dev:web": "vite",
+    "dev:electron": "wait-on http-get://127.0.0.1:5173 && electron .",
+    "build": "vite build && npm run capacitor:copy",
+    "preview": "vite preview",
+    "electron:build": "npm run build && electron-builder",
+    "capacitor:init": "cap init yacht-card-battle com.example.yachtcardbattle --web-dir dist",
+    "capacitor:add:android": "cap add android",
+    "capacitor:add:ios": "cap add ios",
+    "capacitor:copy": "cap copy",
+    "capacitor:open:android": "cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.0.0",
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/ios": "^6.0.0",
+    "@rollup/rollup-win32-x64-msvc": "^4.53.3",
+    "phaser": "^3.80.1"
+  },
+  "devDependencies": {
+    "sass-embedded-win32-x64": "^1.92.1",
+    "@capacitor/cli": "^6.0.0",
+    "concurrently": "^8.2.2",
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3",
+    "typescript": "^5.0.2",
+    "vite": "^5.2.0",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.example.yachtcardbattle",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ]
+  }
+}
