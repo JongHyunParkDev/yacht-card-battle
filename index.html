@@ -6,13 +6,32 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
-    <title>Yacht Card Battle</title>
+    <title>CB Tower</title>
     <style>
+      @font-face {
+        font-family: 'SBAggroB';
+        src: url('/src/assets/font/SB 어그로 B.ttf') format('truetype');
+        font-weight: bold;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: 'SBAggroM';
+        src: url('/src/assets/font/SB 어그로 M.ttf') format('truetype');
+        font-weight: normal;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: 'SBAggroL';
+        src: url('/src/assets/font/SB 어그로 L.ttf') format('truetype');
+        font-weight: 300;
+        font-style: normal;
+      }
       body {
         margin: 0;
         padding: 0;
         background-color: #000;
         overflow: hidden;
+        font-family: 'SBAggroM', sans-serif;
       }
       #game-container {
         width: 100vw;

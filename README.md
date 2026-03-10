@@ -1,2 +1,3 @@
-# yacht-card-battle
-card battle game (일렉트론 및 모바일)
+# CB-Tower
+
+CB-Tower (일렉트론 및 모바일)

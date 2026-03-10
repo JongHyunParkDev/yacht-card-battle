@@ -1,8 +1,8 @@
 {
-  "name": "yacht-card-battle",
+  "name": "CB-Tower",
   "private": true,
   "version": "1.0.0",
-  "description": "Yacht card battle game using Phaser, Electron, and Capacitor",
+  "description": "CB-Tower game using Phaser, Electron, and Capacitor",
   "main": "electron/main.js",
   "scripts": {
     "dev": "concurrently \"npm run dev:web\" \"npm run dev:electron\"",
@@ -11,7 +11,7 @@
     "build": "vite build && npm run capacitor:copy",
     "preview": "vite preview",
     "electron:build": "npm run build && electron-builder",
-    "capacitor:init": "cap init yacht-card-battle com.example.yachtcardbattle --web-dir dist",
+    "capacitor:init": "cap init CB-Tower com.example.CB-Tower --web-dir dist",
     "capacitor:add:android": "cap add android",
     "capacitor:add:ios": "cap add ios",
     "capacitor:copy": "cap copy",
@@ -35,7 +35,7 @@
     "wait-on": "^7.2.0"
   },
   "build": {
-    "appId": "com.example.yachtcardbattle",
+    "appId": "com.example.CB-Tower",
     "directories": {
       "output": "release"
     },
