@@ -2,7 +2,6 @@ import Phaser from 'phaser';
 
 import bg1 from '../assets/img/background/background_1.png';
 import bg2 from '../assets/img/background/background_2.png';
-import bg3 from '../assets/img/background/background_3.png';
 
 export default class PreloadScene extends Phaser.Scene {
   constructor() {
@@ -63,7 +62,6 @@ export default class PreloadScene extends Phaser.Scene {
     // 백그라운드 이미지 로드
     this.load.image('bg1', bg1);
     this.load.image('bg2', bg2);
-    this.load.image('bg3', bg3);
   }
 
   create() {

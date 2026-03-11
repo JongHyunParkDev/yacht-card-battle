@@ -15,11 +15,12 @@ export default class IntroScene extends Phaser.Scene {
     // 1. 가장 뒷 배경 (움직임 없음)
     this.add.image(width / 2, height / 2, 'bg1').setOrigin(0.5);
 
-    // 2. 가운데 탑 이미지 (적은 움직임)
-    const bgLayer2 = this.add.image(width / 2, height / 2, 'bg2').setOrigin(0.5).setScale(0.9);
+    // 패럴랙스 이동 시 우측 하단 공백이 보이지 않도록 미리 이동 최대치만큼 더해둡니다.
+    const maxBg2OffsetX = (width / 2) * 0.04;
+    const maxBg2OffsetY = (height / 2) * 0.04;
 
-    // 3. 우측 하단 캐릭터 이미지 (크기 조절 및 우측 하단 배치)
-    const bgLayer3 = this.add.image(width, height, 'bg3')
+    // 2. 우측 하단 캐릭터 이미지 (크기 조절 및 우측 하단 배치)
+    const bgLayer2 = this.add.image(width + maxBg2OffsetX, height + maxBg2OffsetY, 'bg2')
       .setOrigin(1, 1) // 우측 하단 기준
       .setScale(0.5); // 캐릭터 크기가 너무 크다 하셔서 살짝 줄였습니다
 
@@ -29,12 +30,9 @@ export default class IntroScene extends Phaser.Scene {
       const offsetX = pointer.x - width / 2;
       const offsetY = pointer.y - height / 2;
 
-      // 마우스가 이동한 반대 방향으로 조금씩 이동
-      // 타워: 아주 살짝만 움직이도록 비율 감소 (0.005)
-      bgLayer2.setPosition(width / 2 - offsetX * 0.005, height / 2 - offsetY * 0.005);
-      
       // 캐릭터: 우측 하단 기준으로 살짝 이동 (0.04)
-      bgLayer3.setPosition(width - offsetX * 0.04, height - offsetY * 0.04);
+      // 여백을 더해두었으므로 우측 하단으로 마우스를 향해도 공백이 보이지 않습니다.
+      bgLayer2.setPosition((width + maxBg2OffsetX) - offsetX * 0.04, (height + maxBg2OffsetY) - offsetY * 0.04);
     });
 
     // Title
