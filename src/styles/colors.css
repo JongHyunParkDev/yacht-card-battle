@@ -1,0 +1,71 @@
+/* Game Design System - Color Palettes */
+
+/**
+ * 🎨 Palette 1: Cyber Neon (Cyberpunk Style)
+ * 메인 배경: #0F0C29 (Deep Space)
+ * 포인트 1: #00FFCC (Neon Cyan/Teal) - 현재 사용 중인 메인 테마
+ * 포인트 2: #333333 (Gunmetal Grey) - 버튼 배경
+ * 서브 포인트: #FF00FF (Electric Purple) - 강조 또는 경고
+ */
+
+:root {
+  /* 1. Cyber Neon Palette */
+  --cyber-bg: #0f0c29;
+  --cyber-primary: #00ffcc;
+  --cyber-surface: #333333;
+  --cyber-accent: #ff00ff;
+
+  /* 2. Midnight Gold (Premium/Fantasy Style) */
+  --midnight-bg: #1a1a1d;
+  --midnight-primary: #c3073f;
+  --midnight-surface: #4e4e50;
+  --midnight-accent: #6f2232;
+
+  /* 3. Forest Guardian (Natural/Comfortable Style) */
+  --forest-bg: #1b262c;
+  --forest-primary: #0f4c75;
+  --forest-surface: #3282b8;
+  --forest-accent: #bbe1fa;
+
+  /* 4. Deep Lava (Powerful/Intense Style) */
+  --lava-bg: #221f1f;
+  --lava-primary: #e50914;
+  --lava-surface: #f5f5f1;
+  --lava-accent: #b81d24;
+}
+
+/* Global Select & Checkbox Reset */
+select,
+input[type="checkbox"] {
+  transition: all 0.2s ease;
+}
+
+select:hover {
+  border-color: var(--cyber-accent) !important;
+  box-shadow: 0 0 10px var(--cyber-primary);
+}
+
+input[type="checkbox"]:checked {
+  filter: drop-shadow(0 0 5px var(--cyber-primary));
+}
+
+/* Settings UI Classes */
+.settings-select {
+  width: 250px;
+  padding: 10px;
+  font-family: 'SBAggroM', sans-serif;
+  font-size: 20px;
+  background-color: var(--cyber-surface);
+  color: white;
+  border: 2px solid var(--cyber-primary);
+  border-radius: 8px;
+  cursor: pointer;
+  outline: none;
+}
+
+.settings-checkbox {
+  width: 30px;
+  height: 30px;
+  cursor: pointer;
+  accent-color: var(--cyber-primary);
+}

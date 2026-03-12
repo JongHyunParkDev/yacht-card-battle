@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 
-import bg1 from '../assets/img/background/background_1.png';
-import bg2 from '../assets/img/background/background_2.png';
+import bg1 from '@src/assets/img/background/background_1.png';
+import bg2 from '@src/assets/img/background/background_2.png';
 
 export default class PreloadScene extends Phaser.Scene {
   constructor() {

@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { addFullscreenBackground } from '@src/utils/sceneUtils';
 
 export default class MainScene extends Phaser.Scene {
   constructor() {
@@ -11,6 +12,9 @@ export default class MainScene extends Phaser.Scene {
 
   create() {
     const { width, height } = this.scale;
+    
+    // 배경 이미지 추가
+    addFullscreenBackground(this, 'bg1');
     
     this.add.text(100, height / 2 - 50, 'CB-Tower - Main Game', { 
       fontFamily: 'SBAggroB',

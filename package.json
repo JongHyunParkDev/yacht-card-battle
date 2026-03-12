@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "concurrently \"npm run dev:web\" \"npm run dev:electron\"",
     "dev:web": "vite",
-    "dev:electron": "wait-on http-get://127.0.0.1:5173 && electron .",
+    "dev:electron": "wait-on http://localhost:5173 && npx electron .",
     "build": "vite build && npm run capacitor:copy",
     "preview": "vite preview",
     "electron:build": "npm run build && electron-builder",
