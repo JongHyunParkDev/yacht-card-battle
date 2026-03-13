@@ -33,15 +33,16 @@ export default class SettingsScene extends Phaser.Scene {
     }
 
     // CSS에서 메인 테마 색상 동적 가져오기
-    const primaryColor = getCssColor('--cyber-primary', '#00ffcc');
-    const surfaceColor = getCssColor('--cyber-surface', '#333333');
-    const successColor = getCssColor('--forest-primary', '#0f4c75');
+    const primaryColor = getCssColor('--medieval-primary', '#d4af37'); // 앤틱 골드
+    const surfaceColor = getCssColor('--medieval-surface', '#2c1e16'); // 딥 브라운
+    const accentColor = getCssColor('--medieval-accent', '#8b0000'); // 크림슨 레드
+    const textColor = getCssColor('--medieval-text', '#e6d8b8'); // 양피지 텍스트
 
     // 타이틀 (더 크고 화려하게)
     this.labels['title'] = this.add.text(0, 0, i18n.t('settings'), {
       fontFamily: 'SBAggroB',
       fontSize: '56px',
-      color: '#ffffff',
+      color: primaryColor,
       stroke: '#000000',
       strokeThickness: 8
     }).setOrigin(0.5);
@@ -111,7 +112,7 @@ export default class SettingsScene extends Phaser.Scene {
 
     // --- 하단 액션 버튼 ---
     const applyBtn = this.add.text(0, 0, i18n.t('apply'), {
-      fontFamily: 'SBAggroM', fontSize: '32px', backgroundColor: successColor, padding: { x: 40, y: 15 }
+      fontFamily: 'SBAggroM', fontSize: '32px', backgroundColor: accentColor, color: textColor, padding: { x: 40, y: 15 }
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
     applyBtn.on('pointerdown', async () => {
@@ -126,7 +127,7 @@ export default class SettingsScene extends Phaser.Scene {
     });
 
     const backBtn = this.add.text(0, 0, i18n.t('back'), {
-      fontFamily: 'SBAggroM', fontSize: '32px', backgroundColor: surfaceColor, padding: { x: 40, y: 15 }
+      fontFamily: 'SBAggroM', fontSize: '32px', backgroundColor: surfaceColor, color: textColor, padding: { x: 40, y: 15 }
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
     backBtn.on('pointerdown', () => this.scene.start('IntroScene'));

@@ -1,37 +1,19 @@
 /* Game Design System - Color Palettes */
 
 /**
- * 🎨 Palette 1: Cyber Neon (Cyberpunk Style)
- * 메인 배경: #0F0C29 (Deep Space)
- * 포인트 1: #00FFCC (Neon Cyan/Teal) - 현재 사용 중인 메인 테마
- * 포인트 2: #333333 (Gunmetal Grey) - 버튼 배경
- * 서브 포인트: #FF00FF (Electric Purple) - 강조 또는 경고
+ * 🎨 Palette: Medieval Fantasy (Card Battle Style)
+ * 메인 배경: #1A1412 (Dark Stone/Wood)
+ * 포인트 1: #D4AF37 (Antique Gold) - 텍스트 및 테두리 (활성 상태)
+ * 포인트 2: #2C1E16 (Deep Brown/Leather) - 입력 칸 폼 및 버튼 배경
+ * 서브 포인트: #8B0000 (Crimson Red) - 강조, 경고 또는 호버 액센트
  */
 
 :root {
-  /* 1. Cyber Neon Palette */
-  --cyber-bg: #0f0c29;
-  --cyber-primary: #00ffcc;
-  --cyber-surface: #333333;
-  --cyber-accent: #ff00ff;
-
-  /* 2. Midnight Gold (Premium/Fantasy Style) */
-  --midnight-bg: #1a1a1d;
-  --midnight-primary: #c3073f;
-  --midnight-surface: #4e4e50;
-  --midnight-accent: #6f2232;
-
-  /* 3. Forest Guardian (Natural/Comfortable Style) */
-  --forest-bg: #1b262c;
-  --forest-primary: #0f4c75;
-  --forest-surface: #3282b8;
-  --forest-accent: #bbe1fa;
-
-  /* 4. Deep Lava (Powerful/Intense Style) */
-  --lava-bg: #221f1f;
-  --lava-primary: #e50914;
-  --lava-surface: #f5f5f1;
-  --lava-accent: #b81d24;
+  --medieval-bg: #1a1412;
+  --medieval-primary: #d4af37;
+  --medieval-surface: #2c1e16;
+  --medieval-accent: #8b0000;
+  --medieval-text: #e6d8b8; /* 양피지 느낌의 텍스트 색상 */
 }
 
 /* Global Select & Checkbox Reset */
@@ -41,31 +23,37 @@ input[type="checkbox"] {
 }
 
 select:hover {
-  border-color: var(--cyber-accent) !important;
-  box-shadow: 0 0 10px var(--cyber-primary);
+  border-color: var(--medieval-accent) !important;
+  box-shadow: 0 0 8px var(--medieval-accent);
 }
 
 input[type="checkbox"]:checked {
-  filter: drop-shadow(0 0 5px var(--cyber-primary));
+  filter: drop-shadow(0 0 5px var(--medieval-primary));
 }
 
-/* Settings UI Classes */
+/* Settings UI Classes (Medieval Style) */
 .settings-select {
   width: 250px;
   padding: 10px;
   font-family: 'SBAggroM', sans-serif;
   font-size: 20px;
-  background-color: var(--cyber-surface);
-  color: white;
-  border: 2px solid var(--cyber-primary);
-  border-radius: 8px;
+  background-color: var(--medieval-surface);
+  color: var(--medieval-text);
+  border: 2px solid var(--medieval-primary);
+  border-radius: 4px; /* 판타지는 너무 둥글지 않게 */
   cursor: pointer;
   outline: none;
+  box-shadow: inset 0 0 10px rgba(0,0,0,0.5); /* 질감 느낌 */
+}
+
+.settings-select option {
+  background-color: var(--medieval-surface);
+  color: var(--medieval-text);
 }
 
 .settings-checkbox {
   width: 30px;
   height: 30px;
   cursor: pointer;
-  accent-color: var(--cyber-primary);
+  accent-color: var(--medieval-accent);
 }

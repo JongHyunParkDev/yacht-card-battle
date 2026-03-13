@@ -1,7 +1,12 @@
 import Phaser from 'phaser';
 import { addFullscreenBackground, setResponsiveScale } from '@src/utils/sceneUtils';
 import { i18n } from '@src/utils/localization';
+import '@src/styles/colors.css';
 
+const getCssColor = (varName: string, defaultColor: string) => {
+  if (typeof document === 'undefined') return defaultColor;
+  return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || defaultColor;
+};
 export default class IntroScene extends Phaser.Scene {
   constructor() {
     super('IntroScene');
@@ -23,6 +28,12 @@ export default class IntroScene extends Phaser.Scene {
       }
     }
 
+    // CSS 테마 연결
+    const primaryColor = getCssColor('--medieval-primary', '#d4af37'); 
+    const textColor = getCssColor('--medieval-text', '#e6d8b8');
+    const disabledColor = '#705c44'; // 어두운 금색/구리 느낌
+    const hoverColor = '#ffdb58'; // 밝은 금색
+
     // 2. 캐릭터 이미지 생성
     const character = this.add.image(0, 0, 'bg2').setOrigin(1, 1);
 
@@ -30,7 +41,7 @@ export default class IntroScene extends Phaser.Scene {
     const title = this.add.text(100, 0, 'CB Tower', {
       fontFamily: 'SBAggroB',
       fontSize: '64px',
-      color: '#ffffff',
+      color: primaryColor,
       stroke: '#000000',
       strokeThickness: 6
     }).setOrigin(0, 0.5);
@@ -64,7 +75,7 @@ export default class IntroScene extends Phaser.Scene {
       const button = this.add.text(100, 0, text, {
         fontFamily: 'SBAggroM',
         fontSize: '32px',
-        color: enabled ? '#aaaaaa' : '#444444', // 비활성화 시 어두운 색상
+        color: enabled ? textColor : disabledColor, // 비활성화 시 어두운 톤
         fixedWidth: 300,
       }).setOrigin(0, 0.5);
 
@@ -72,11 +83,11 @@ export default class IntroScene extends Phaser.Scene {
         button.setInteractive({ useHandCursor: true });
         // 애니메이션 및 이벤트
         button.on('pointerover', () => {
-          button.setColor('#ffffff').setScale(1.05);
+          button.setColor(hoverColor).setScale(1.05);
           this.add.tween({ targets: button, x: 110, duration: 100, ease: 'Power1' });
         });
         button.on('pointerout', () => {
-          button.setColor('#aaaaaa').setScale(1).setX(100);
+          button.setColor(textColor).setScale(1).setX(100);
         });
         button.on('pointerdown', () => {
           button.setScale(0.95);
@@ -84,7 +95,7 @@ export default class IntroScene extends Phaser.Scene {
         });
         button.on('pointerup', () => button.setScale(1.05));
       } else {
-        // 비활성화 텍스트 (선택 사항: (비활성) 표시 등)
+        // 비활성화 텍스트
         button.setText(text + ` (${i18n.t('none')})`);
       }
 
