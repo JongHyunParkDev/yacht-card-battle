@@ -1,7 +1,0 @@
-    <svg class="attr-icon" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="50" cy="50" r="48" fill="#3D2B1F"/>
-        <circle cx="50" cy="50" r="40" fill="#604439"/>
-        <path d="M30 30L50 20L75 35L80 60L55 85L25 75L20 50Z" fill="#8D7366" opacity="0.3"/>
-        <path d="M50 20L45 50L60 55L50 85M20 50L45 50M80 60L60 55" 
-              stroke="#EDE0D4" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
