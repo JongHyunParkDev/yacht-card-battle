@@ -121,7 +121,7 @@ export default class IntroScene extends Phaser.Scene {
       createButton(i18n.t('newGame'), () => {
         if (hasSaveFile) {
           // 기존 세이브 파일이 있을 경우 팝업으로 사용자 의사 확인
-          const isConfirmed = confirm('기존 진행 중인 게임 데이터가 있습니다.\n삭제하고 새로운 게임을 시작하시겠습니까?');
+          const isConfirmed = confirm(i18n.t('newGameConfirm'));
           if (isConfirmed) {
             this.scene.start('MainScene', { isContinue: false });
           }

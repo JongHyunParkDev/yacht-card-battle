@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { addFullscreenBackground } from '@src/utils/sceneUtils';
+import { i18n } from '@src/utils/localization';
 
 export default class MainScene extends Phaser.Scene {
   private isContinue: boolean = false;
@@ -221,7 +222,7 @@ export default class MainScene extends Phaser.Scene {
      backdrop.setInteractive(new Phaser.Geom.Rectangle(-bgW / 2, -bgH / 2, bgW, bgH), Phaser.Geom.Rectangle.Contains);
 
      // 일시정지 타이틀
-     const titleText = this.add.text(0, -120, '일시정지', {
+     const titleText = this.add.text(0, -120, i18n.t('pause'), {
       fontFamily: 'SBAggroB',
       fontSize: '48px',
       color: '#ffffff'
@@ -229,18 +230,18 @@ export default class MainScene extends Phaser.Scene {
 
      // 버튼 공통 스타일
      const btnStyle: Phaser.Types.GameObjects.Text.TextStyle = {
-         fixedWidth: 120,
-         fixedHeight: 120,
+         fixedWidth: 140,
+         fixedHeight: 100,
          fontFamily: 'SBAggroM',
-         fontSize: '24px',
+         fontSize: '20px',
          color: '#e6d8b8',
          backgroundColor: '#222222',
          align: 'center',
-         padding: { top: 20 }
+         padding: { top: 15, left: 5, right: 5}
      };
 
      // 1. 도움말 버튼 (왼쪽)
-     const helpBtn = this.add.text(-160, 20, '?\n\n도움말', btnStyle)
+     const helpBtn = this.add.text(-160, 20, `?\n\n${i18n.t('help')}`, btnStyle)
          .setOrigin(0.5).setInteractive({ useHandCursor: true });
 
      helpBtn.on('pointerdown', () => {
@@ -252,7 +253,7 @@ export default class MainScene extends Phaser.Scene {
      helpBtn.on('pointerout', () => helpBtn.setColor('#e6d8b8').setScale(1));
 
      // 2. 재개하기 버튼 (가운데)
-     const resumeBtn = this.add.text(0, 20, '▶\n\n재개하기', btnStyle)
+     const resumeBtn = this.add.text(0, 20, `▶\n\n${i18n.t('resume')}`, btnStyle)
          .setOrigin(0.5).setInteractive({ useHandCursor: true });
 
      resumeBtn.on('pointerdown', () => {
@@ -263,7 +264,7 @@ export default class MainScene extends Phaser.Scene {
      resumeBtn.on('pointerout', () => resumeBtn.setColor('#e6d8b8').setScale(1));
 
      // 3. 메인 메뉴 버튼 (오른쪽)
-     const mainMenuBtn = this.add.text(160, 20, '⌂\n\n메인으로', btnStyle)
+     const mainMenuBtn = this.add.text(160, 20, `⌂\n\n${i18n.t('mainMenu')}`, btnStyle)
          .setOrigin(0.5).setInteractive({ useHandCursor: true });
 
      mainMenuBtn.on('pointerdown', () => {

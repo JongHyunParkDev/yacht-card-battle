@@ -13,7 +13,12 @@ export const translations = {
     'back': '뒤로 가기',
     'apply': '적용',
     'on': '켜짐',
-    'off': '꺼짐'
+    'off': '꺼짐',
+    'pause': '일시정지',
+    'help': '도움말',
+    'resume': '재개하기',
+    'mainMenu': '메인으로',
+    'newGameConfirm': '기존 진행 중인 게임 데이터가 있습니다.\n삭제하고 새로운 게임을 시작하시겠습니까?'
   },
   en: {
     'newGame': 'New Game',
@@ -27,7 +32,12 @@ export const translations = {
     'back': 'Back',
     'apply': 'Apply',
     'on': 'On',
-    'off': 'Off'
+    'off': 'Off',
+    'pause': 'Pause',
+    'help': 'Help',
+    'resume': 'Resume',
+    'mainMenu': 'Main Menu',
+    'newGameConfirm': 'Existing game data found.\nAre you sure you want to delete it and start a new game?'
   }
 };
 
