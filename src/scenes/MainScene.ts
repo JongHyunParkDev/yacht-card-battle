@@ -195,13 +195,166 @@ export default class MainScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-ESC', () => {
        this.togglePauseMenu(width, height);
     });
+
+    // 우측 하단 덱 확인 창 생성
+    this.createDeckWindow(width, height);
   }
 
   playerToken!: Phaser.GameObjects.Sprite;
-  currentNodeId: number = -1; // -1로 초기화 (그리기 단계에서 재설정됨)
+  currentNodeId: number = -1;
   pauseMenuContainer!: Phaser.GameObjects.Container;
+  deckWindowContainer!: Phaser.GameObjects.Container;
+  // 패널 닫힘 상태에서 Y 오프셋 (0 = 완전 닫힘, -panelH = 완전 열림)
+  deckPanelOffsetY: number = 0;
   isPaused: boolean = false;
-  isMoving: boolean = false; // 플레이어가 이동 중인지 체크 (이동 중일 땐 ESC 방지)
+  isMoving: boolean = false;
+
+  // 덱 패널 UI를 카메라 위치에 맞춰 매 프레임 동기화
+  update() {
+    if (!this.deckWindowContainer || !this.cameras.main) return;
+
+    const cam = this.cameras.main;
+    const zoom = cam.zoom;
+    const { width, height } = this.scale;
+
+    const handleH = 34;
+    // 화면 전체 너비를 월드 좌표로 환산
+    const viewW = width / zoom;
+
+    // 카메라 좌측 하단 월드 좌표
+    const worldLeft   = cam.midPoint.x - viewW / 2;
+    const worldBottom = cam.midPoint.y + (height / 2) / zoom;
+
+    const targetX = worldLeft;
+    const targetY = worldBottom + this.deckPanelOffsetY - handleH;
+
+    this.deckWindowContainer.setPosition(targetX, targetY);
+  }
+
+  createDeckWindow(width: number, height: number) {
+    // 화면 전체 너비 사용 (zoom 고려)
+    const zoom = this.cameras.main.zoom;
+    const panelW = Math.round(width / zoom);
+    const panelH = 350;
+    const handleW = 120;
+    const handleH = 34;
+    // 핸들을 패널 중앙에 배치
+    const handleX = (panelW - handleW) / 2;
+    const handleY = 0;
+
+    // 컨테이너는 update()가 매 프레임 올바른 월드 좌표로 동기화
+    this.deckWindowContainer = this.add.container(0, 0);
+    this.deckWindowContainer.setDepth(50);
+
+    // 1. 핸들 배경
+    const handleGraphics = this.add.graphics();
+    handleGraphics.fillStyle(0xd4af37, 1);
+    handleGraphics.fillRoundedRect(handleX, handleY, handleW, handleH, { tl: 10, tr: 10, bl: 0, br: 0 } as any);
+
+    const deckText = i18n.t('deck');
+    const handleText = this.add.text(handleX + handleW / 2, handleY + handleH / 2, deckText + ' \u25b2', {
+      fontFamily: 'SBAggroM',
+      fontSize: '14px',
+      color: '#000000',
+    }).setOrigin(0.5);
+
+    // 핸들 클릭 영역
+    const handleZone = this.add.zone(handleX + handleW / 2, handleY + handleH / 2, handleW, handleH);
+    handleZone.setInteractive({ useHandCursor: true });
+
+    // 2. 패널 본체 배경
+    const panelBg = this.add.graphics();
+    panelBg.fillStyle(0x2a2a2a, 0.95);
+    panelBg.lineStyle(2, 0xd4af37, 1);
+    panelBg.fillRoundedRect(0, handleH, panelW, panelH, { tl: 10, tr: 0, bl: 0, br: 0 } as any);
+    panelBg.strokeRoundedRect(0, handleH, panelW, panelH, { tl: 10, tr: 0, bl: 0, br: 0 } as any);
+
+    // 맵 터치 방지 영역
+    const panelBlockZone = this.add.zone(panelW / 2, handleH + panelH / 2, panelW, panelH);
+    panelBlockZone.setInteractive();
+
+    // 3. 좌측: 캐릭터 정보
+    const leftW = panelW * 0.4;
+    const leftTitle = this.add.text(leftW / 2, handleH + 25, '\ucce0\ub9ad\ud130 \uc815\ubcf4', {
+      fontFamily: 'SBAggroB',
+      fontSize: '16px',
+      color: '#d4af37'
+    }).setOrigin(0.5);
+
+    const leftContent = this.add.text(20, handleH + 55,
+      '\u2022 HP: 100/100\n\u2022 MP: 50/50\n\u2022 \uacf5\uaca9\ub825: 15\n\u2022 \ubc29\uc5b4\ub825: 5\n\n(\ucce0\ub9ad\ud130 \uc774\ubbf8\uc9c0)', {
+      fontFamily: 'SBAggroM',
+      fontSize: '14px',
+      color: '#e6d8b8',
+      lineSpacing: 10
+    });
+
+    // 중앙 구분선
+    panelBg.lineStyle(1, 0x666666, 1);
+    panelBg.lineBetween(leftW, handleH + 20, leftW, handleH + panelH - 20);
+
+    // 4. 우측: 덱 카드 목록
+    const rightW = panelW * 0.6;
+    const rightTitle = this.add.text(leftW + rightW / 2, handleH + 25, '\ud604\uc7ac \ub371 \ub9ac\uc2a4\ud2b8', {
+      fontFamily: 'SBAggroB',
+      fontSize: '16px',
+      color: '#d4af37'
+    }).setOrigin(0.5);
+
+    const rightContent = this.add.text(leftW + 20, handleH + 55,
+      '[\ubcf4\uc720 \uce74\ub4dc \ubaa9\ub85d]\n\n\u2022 \uc77c\ubc18 \ud0c0\uaca9 (\ube44\uc6a9 1, \ud53c\ud574 6)\n\u2022 \uc77c\ubc18 \ubc29\uc5b4 (\ube44\uc6a9 1, \ubc29\uc5b4\ub3c4 5)\n\u2022 \ucc0c\ub974\uae30 (\ube44\uc6a9 1, \ud53c\ud574 9)\n\u2022 \ubd88\uaf43 \uc1a1\uace3\ub2c8 (\ube44\uc6a9 2, \ud53c\ud574 12)\n\n* \uc2e4\uc81c \ub371 \uc815\ubcf4\uac00 \uc5f0\ub3d9\ub420 \uc608\uc815\uc785\ub2c8\ub2e4.', {
+      fontFamily: 'SBAggroM',
+      fontSize: '14px',
+      color: '#e6d8b8',
+      wordWrap: { width: rightW - 40 },
+      lineSpacing: 8
+    });
+
+    this.deckWindowContainer.add([
+      panelBg, panelBlockZone,
+      handleGraphics, handleText, handleZone,
+      leftTitle, leftContent,
+      rightTitle, rightContent
+    ]);
+
+    // 5. 클릭 토글: deckPanelOffsetY를 addCounter로 애니메이션
+    let isPanelOpen = false;
+    const closedOffset = 0;
+    const openedOffset = -panelH;
+
+    const togglePanel = (toOpen: boolean) => {
+      isPanelOpen = toOpen;
+      handleText.setText(deckText + (isPanelOpen ? ' \u25bc' : ' \u25b2'));
+      const from = this.deckPanelOffsetY;
+      const to = isPanelOpen ? openedOffset : closedOffset;
+
+      this.tweens.addCounter({
+        from,
+        to,
+        duration: 350,
+        ease: 'Cubic.easeOut',
+        onUpdate: (tween) => {
+          this.deckPanelOffsetY = tween.getValue() ?? this.deckPanelOffsetY;
+        }
+      });
+    };
+
+    handleZone.on('pointerdown', () => {
+      togglePanel(!isPanelOpen);
+    });
+
+    // 호버 효과
+    handleZone.on('pointerover', () => {
+      handleGraphics.clear();
+      handleGraphics.fillStyle(0xf5cc4a, 1);
+      handleGraphics.fillRoundedRect(handleX, handleY, handleW, handleH, { tl: 10, tr: 10, bl: 0, br: 0 } as any);
+    });
+    handleZone.on('pointerout', () => {
+      handleGraphics.clear();
+      handleGraphics.fillStyle(0xd4af37, 1);
+      handleGraphics.fillRoundedRect(handleX, handleY, handleW, handleH, { tl: 10, tr: 10, bl: 0, br: 0 } as any);
+    });
+  }
 
   togglePauseMenu(width: number, height: number) {
     if (this.isPaused || this.isMoving) return; // 이미 퍼즈 상태거나 이동 중이면 넘김

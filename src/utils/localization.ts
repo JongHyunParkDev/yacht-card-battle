@@ -18,7 +18,8 @@ export const translations = {
     'help': '도움말',
     'resume': '재개하기',
     'mainMenu': '메인으로',
-    'newGameConfirm': '기존 진행 중인 게임 데이터가 있습니다.\n삭제하고 새로운 게임을 시작하시겠습니까?'
+    'newGameConfirm': '기존 진행 중인 게임 데이터가 있습니다.\n삭제하고 새로운 게임을 시작하시겠습니까?',
+    'deck': '내 덱'
   },
   en: {
     'newGame': 'New Game',
@@ -37,7 +38,8 @@ export const translations = {
     'help': 'Help',
     'resume': 'Resume',
     'mainMenu': 'Main Menu',
-    'newGameConfirm': 'Existing game data found.\nAre you sure you want to delete it and start a new game?'
+    'newGameConfirm': 'Existing game data found.\nAre you sure you want to delete it and start a new game?',
+    'deck': 'My Deck'
   }
 };
 
