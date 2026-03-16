@@ -36,6 +36,9 @@ export default class MainScene extends Phaser.Scene {
     // 맵 생성을 위한 시드(Seed) 해시값
     let mapHash = '';
 
+    // TODO iscontinue 를 넘겨 받는게 아니라 load-game 으로 받아서 그 내용을 넘긴다.
+    // + 새로하기일 때는 intro 에서 maphash 를 만들고 그 내용을 넘긴다. 
+    // + save-game 할 때는, mapNode 에 이벤트가 종료될 떄 save-game 을 진행하게 한다.
     // '이어하기(Continue)' 모드일 때만 기존 세이브 파일을 확인합니다.
     if (this.isContinue) {
       // Electron 환경에서 JSON 파일로 세이브 로드
