@@ -17,34 +17,37 @@ function createWindow () {
 
   win.setMenu(null); // 메뉴바를 아예 제거
 
-  // 게임 세이브 (프론트 -> 백엔드)
-  ipcMain.handle('save-game', async (event, dataString) => {
-    const { canceled, filePath } = await dialog.showSaveDialog(win, {
-      title: '게임 세이브 파일 저장',
-      defaultPath: 'savegame.json',
-      filters: [{ name: 'JSON', extensions: ['json'] }]
-    });
-
-    if (!canceled && filePath) {
-      fs.writeFileSync(filePath, dataString, 'utf-8');
-      return { success: true, filePath };
+  // 게임 세이브 (프론트 -> 백엔드) 자동 저장
+  ipcMain.handle('save-game', async (event, dataObj) => {
+    try {
+      const savePath = path.join(app.getPath('userData'), 'savegame.json');
+      // dataObj 파라미터가 객체일 수 있으므로 JSON 문자열로 변환 후 저장
+      const dataString = typeof dataObj === 'string' ? dataObj : JSON.stringify(dataObj);
+      fs.writeFileSync(savePath, dataString, 'utf-8');
+      return { success: true, filePath: savePath };
+    } catch (e) {
+      console.error('Save failed:', e);
+      return { success: false, error: e.message };
     }
-    return { success: false };
   });
 
-  // 게임 로드 (백엔드 -> 프론트)
+  // 게임 로드 (백엔드 -> 프론트) 자동 로드
   ipcMain.handle('load-game', async (event) => {
-    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
-      title: '게임 세이브 파일 불러오기',
-      filters: [{ name: 'JSON', extensions: ['json'] }],
-      properties: ['openFile']
-    });
-
-    if (!canceled && filePaths.length > 0) {
-      const dataString = fs.readFileSync(filePaths[0], 'utf-8');
-      return { success: true, data: dataString };
+    try {
+      const savePath = path.join(app.getPath('userData'), 'savegame.json');
+      if (fs.existsSync(savePath)) {
+        const dataString = fs.readFileSync(savePath, 'utf-8');
+        // 파싱된 객체 형태로 바로 프론트에 넘겨주기 위해 JSON.parse 적용 (실패 시 원본 반환)
+        let parsedData = dataString;
+        try { parsedData = JSON.parse(dataString); } catch(err) {}
+        
+        return { success: true, data: parsedData };
+      }
+      return { success: false, error: 'File not found' };
+    } catch (e) {
+      console.error('Load failed:', e);
+      return { success: false, error: e.message };
     }
-    return { success: false };
   });
 
   // 세이브 파일 존재 여부 확인

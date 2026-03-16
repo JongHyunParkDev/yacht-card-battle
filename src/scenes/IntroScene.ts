@@ -119,7 +119,16 @@ export default class IntroScene extends Phaser.Scene {
 
       // 1. 새로하기
       createButton(i18n.t('newGame'), () => {
-        this.scene.start('MainScene');
+        if (hasSaveFile) {
+          // 기존 세이브 파일이 있을 경우 팝업으로 사용자 의사 확인
+          const isConfirmed = confirm('기존 진행 중인 게임 데이터가 있습니다.\n삭제하고 새로운 게임을 시작하시겠습니까?');
+          if (isConfirmed) {
+            this.scene.start('MainScene', { isContinue: false });
+          }
+        } else {
+          // 세이브 파일이 없으면 바로 시작
+          this.scene.start('MainScene', { isContinue: false });
+        }
       });
 
       // 2. 이어하기 (조건부 활성화)

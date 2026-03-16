@@ -9,7 +9,6 @@ import mapBg from '@src/assets/img/map/map_bg.png';
 // width: 1024, height: 1024 (1x5 layout -> frameWidth: 204.8, frameHeight: 1024 or 204.8 with offset)
 // for simplicity we will treat it as frameWidth: 204, frameHeight: 204 
 import mapNodes from '@src/assets/img/map/map_nodes.png';
-import playerToken from '@src/assets/img/map/player_token.png';
 
 export default class PreloadScene extends Phaser.Scene {
   constructor() {
@@ -64,7 +63,35 @@ export default class PreloadScene extends Phaser.Scene {
         console.warn('Font loading await failed', e);
       }
       
+      // 로딩 및 준비 완료 시 IntroScene으로 전환
       this.scene.start('IntroScene');
+    });
+
+    // 특정 이미지가 로드되었을 때 즉시 텍스처 분할 (100% 진행도에서 멈추는 현상 방지)
+    this.load.once('filecomplete-image-map_nodes', () => {
+      const tex = this.textures.get('map_nodes'); 
+      if (tex && tex.key !== '__DEFAULT') {
+        const rowH = 160; 
+
+        // --- Row 1 & 2 (일반 아이콘: 각 128px 너비) ---
+        for (let r = 0; r < 2; r++) {
+            for (let i = 0; i < 5; i++) {
+                tex.add(`row${r}_${i}`, 0, i * 128, r * rowH, 128, rowH);
+            }
+        }
+
+        // --- Row 3 & 4 (보스 아이콘: 각 160px 너비) ---
+        for (let r = 2; r < 4; r++) {
+            for (let i = 0; i < 4; i++) {
+                tex.add(`row${r}_${i}`, 0, i * 160, r * rowH, 160, rowH);
+            }
+        }
+
+        // --- Row 5 (위치 핀: 각 106.66 너비) ---
+        for (let i = 0; i < 3; i++) {
+            tex.add(`row4_${i}`, 0, i * (640/6), 4 * rowH, 640/6, rowH);
+        }
+      }
     });
 
     // 백그라운드 이미지 로드
@@ -73,11 +100,11 @@ export default class PreloadScene extends Phaser.Scene {
 
     // 맵 이미지 로드
     this.load.image('map_bg', mapBg);
-    // 맵 노드 이미지를 160x160 기준(가로 4칸, 세로 5칸 예상)으로 스프라이트 분할
-    this.load.spritesheet('map_nodes', mapNodes, { frameWidth: 160, frameHeight: 160 });
+    this.load.image('map_nodes', mapNodes);
   }
 
   create() {
     //
+
   }
 }
