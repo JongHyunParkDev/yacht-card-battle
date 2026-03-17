@@ -123,11 +123,11 @@ export default class IntroScene extends Phaser.Scene {
           // 기존 세이브 파일이 있을 경우 팝업으로 사용자 의사 확인
           const isConfirmed = confirm(i18n.t('newGameConfirm'));
           if (isConfirmed) {
-            this.scene.start('MainScene', { isContinue: false });
+            this.scene.start('CharacterSelectScene');
           }
         } else {
-          // 세이브 파일이 없으면 바로 시작
-          this.scene.start('MainScene', { isContinue: false });
+          // 세이브 파일이 없으면 바로 캐릭터 선택으로
+          this.scene.start('CharacterSelectScene');
         }
       });
 

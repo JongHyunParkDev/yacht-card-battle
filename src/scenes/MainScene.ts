@@ -1,623 +1,30 @@
 import Phaser from 'phaser';
-import { addFullscreenBackground } from '@src/utils/sceneUtils';
 import { i18n } from '@src/utils/localization';
 
-export default class MainScene extends Phaser.Scene {
-  private isContinue: boolean = false;
+// ─── 상수 ─────────────────────────────────────────────────────────────────────
 
-  constructor() {
-    super('MainScene');
-  }
+const MAP_WORLD_HEIGHT = 2400;
+const MAP_NUM_LAYERS   = 12;
+const MAP_ZOOM         = 1.1;
 
-  // IntroScene에서 보내준 data를 받습니다 (예: { isContinue: true })
-  init(data: any) {
-    this.isContinue = data?.isContinue || false;
-  }
+const DECK_PANEL_HANDLE_H = 34;
+const DECK_PANEL_HANDLE_W = 120;
+const DECK_COLOR_GOLD     = 0xd4af37;
+const DECK_COLOR_GOLD_HVR = 0xf5cc4a;
+const DECK_COLOR_BG       = 0x2a2a2a;
 
-  preload() {
-    // Load assets here
-  }
+const HANDLE_RADIUS = { tl: 10, tr: 10, bl: 0, br: 0 } as any;
+const PANEL_RADIUS  = { tl: 10, tr: 0,  bl: 0, br: 0 } as any;
 
-  async create() {
-    const { width, height } = this.scale;
-    
-    // 화면에 맞는 기준 너비
-    const mapWorldWidth = Math.max(width, 1000);
-    const mapWorldHeight = 2400; // 충분히 긴 세로 길이 (상단으로 올라가는 형태)
+const NODE_SCALE_DEFAULT  = 0.8;
+const NODE_SCALE_HOVER    = 0.9;
+const NODE_SCALE_PASSED   = 0.6;
+const NODE_SCALE_INACTIVE = 0.7;
 
-    // 카메라 설정 (전체 맵 경계 지정, 줌인)
-    this.cameras.main.setBounds(0, 0, mapWorldWidth, mapWorldHeight);
-    this.cameras.main.setZoom(1.1); // 살짝 확대
-    
-    // 배경 이미지 (전체 높이에 맞춰 꽉 채움)
-    const bg = this.add.image(mapWorldWidth / 2, mapWorldHeight / 2, 'map_bg');
-    bg.setDisplaySize(mapWorldWidth, mapWorldHeight);
+const TOKEN_SCALE_IDLE = 0.4;
+const TOKEN_SCALE_LIFT = 0.6;
 
-    // 맵 생성을 위한 시드(Seed) 해시값
-    let mapHash = '';
-
-    // TODO iscontinue 를 넘겨 받는게 아니라 load-game 으로 받아서 그 내용을 넘긴다.
-    // + 새로하기일 때는 intro 에서 maphash 를 만들고 그 내용을 넘긴다. 
-    // + save-game 할 때는, mapNode 에 이벤트가 종료될 떄 save-game 을 진행하게 한다.
-    // '이어하기(Continue)' 모드일 때만 기존 세이브 파일을 확인합니다.
-    if (this.isContinue) {
-      // Electron 환경에서 JSON 파일로 세이브 로드
-      // @ts-ignore
-      if (typeof require !== 'undefined') {
-        try {
-          const { ipcRenderer } = require('electron');
-          const loadResult = await ipcRenderer.invoke('load-game');
-          if (loadResult && loadResult.success && loadResult.data && loadResult.data.mapHash) {
-            mapHash = loadResult.data.mapHash;
-            console.log('기존 맵 해시 자동 로드 성공(Electron):', mapHash);
-          }
-        } catch (e) {
-          console.warn('Electron 로드 실패, 새 해시 생성 대기');
-        }
-      }
-    }
-
-    // 파일에서 불러오지 못했거나 새 게임(isContinue === false)인 경우, 새로운 해시 생성
-    if (!mapHash) {
-      const timestamp = new Date().getTime();
-      const randomPart = Math.floor(Math.random() * 999999);
-      mapHash = `stage_${timestamp}_${randomPart}`;
-      console.log('새로운 맵 해시 생성됨:', mapHash);
-
-      // JSON 파일에 저장
-      // @ts-ignore
-      if (typeof require !== 'undefined') {
-        try {
-          const { ipcRenderer } = require('electron');
-          // 세이브 파일에 맵 해시값을 저장하도록 요청
-          await ipcRenderer.invoke('save-game', { mapHash });
-        } catch (e) {
-          console.warn('Electron 세이브 실패', e);
-        }
-      }
-    }
-
-    // 시드 기반 맵 생성 함수 호출
-    const mapLayersData = this.generateMapData(mapHash, mapWorldWidth, mapWorldHeight);
-    const allNodes: MapNode[] = mapLayersData.flat();
-
-    // 맵 노드를 그리기 전에, 시작 노드를 확실하게 초기화합니다.
-    const startNode = mapLayersData[0][0];
-    this.currentNodeId = startNode.id; 
-
-    // 점선 그리기 (Dots)
-    const mapGraphics = this.add.graphics();
-    mapGraphics.fillStyle(0xffffff, 1);    // 안(배경)은 흰색
-    mapGraphics.lineStyle(2, 0x000000, 1); // 밖(테두리)은 검정색, 2px 두께
-
-    allNodes.forEach((node: MapNode) => {
-      node.nextNodes.forEach((nextId: number) => {
-        const nextNode = allNodes.find((n: MapNode) => n.id === nextId);
-        if (!nextNode) return;
-        
-        // 두 노드 사이의 거리 측정
-        const dist = Phaser.Math.Distance.Between(node.x, node.y, nextNode.x, nextNode.y);
-        // 약 20px 간격마다 점 찍기
-        const dotCount = Math.floor(dist / 20);
-        for (let i = 1; i < dotCount; i++) { 
-          const t = i / dotCount;
-          // 약간의 커브(Bezier)를 줘도 좋지만 직선(Linear)으로 처리
-          const pointX = Phaser.Math.Linear(node.x, nextNode.x, t);
-          // Y값을 살짝 흔들면 구불구불한 밧줄 느낌이 나지만 단순하게 처리
-          const pointY = Phaser.Math.Linear(node.y, nextNode.y, t);
-          
-          mapGraphics.fillCircle(pointX, pointY, 4);   // 흰색 안쪽
-          mapGraphics.strokeCircle(pointX, pointY, 4); // 검정색 테두리
-        }
-      });
-    });
-
-    // 각 노드 클릭을 위한 UI 구현
-    // 추후 투명도 조절 등을 위해 그려진 스프라이트 배열을 보관합니다
-    const nodeSpritesMap = new Map<number, Phaser.GameObjects.Sprite | Phaser.GameObjects.Graphics>();
-
-    allNodes.forEach((node: MapNode) => {
-      // 1. 맨 처음 시작 점 (layer === 0)은 이미지 없이 흰색/검정테두리 점(Dot)만 그립니다
-      if (node.layer === 0) {
-        const startDot = this.add.graphics();
-        startDot.fillStyle(0xffffff, 1);
-        startDot.lineStyle(3, 0x000000, 1);
-        startDot.fillCircle(node.x, node.y, 16);
-        startDot.strokeCircle(node.x, node.y, 16);
-        nodeSpritesMap.set(node.id, startDot); // 인터랙션용으론 안 씁니다(클릭 못함)
-        return;
-      }
-
-      // 2. 나머지 노드들은 기존 로직(스프라이트 생성) 유지
-      let frameName = '';
-      if (node.type < 5) frameName = `row0_${node.type}`;
-      else if (node.type < 10) frameName = `row1_${node.type - 5}`;
-      else if (node.type < 14) frameName = `row2_${node.type - 10}`;
-      else frameName = `row3_${node.type - 14}`; // 14 이상일 경우
-
-      const nodeSprite = this.add.sprite(node.x, node.y, 'map_nodes', frameName);
-      
-      // 스프라이트 크기 축소 (기본 0.8로 설정)
-      nodeSprite.setScale(0.8); 
-      nodeSprite.setInteractive({ useHandCursor: true });
-      nodeSpritesMap.set(node.id, nodeSprite);
-      
-      // Node Mouse Over 효과
-      nodeSprite.on('pointerover', () => {
-        // 지나간 노드는 마우스 오버 반응 무시
-        if (nodeSprite.alpha < 1) return;
-        nodeSprite.setScale(0.9);
-      });
-      nodeSprite.on('pointerout', () => {
-        // 지나간 노드는 복구 크기를 더 작게, 아니면 원래 크기(0.8)로
-        if (nodeSprite.alpha < 1) nodeSprite.setScale(0.6);
-        else nodeSprite.setScale(0.8);
-      });
-      
-      // Click 이벤트
-      nodeSprite.on('pointerdown', () => {
-        // 퍼즈 상태거나 이동 중이면 클릭 무시
-        if (this.isPaused || this.isMoving) return;
-
-        // 현재 활성화된 노드를 찾습니다.
-        const currentNode = allNodes.find((n: MapNode) => n.id === this.currentNodeId);
-        if (!currentNode) {
-           this.cameras.main.shake(100, 0.005);
-           return;
-        }
-        
-        // 현재 위치에서 다음 갈 수 있는 Node인지 체크 (바로 연결된 곳으로만 가능)
-        if (currentNode.nextNodes.includes(node.id)) {
-           this.movePlayer(node.x, node.y);
-           this.currentNodeId = node.id;
-           this.updateNodesVisibility(allNodes, nodeSpritesMap); // 화면 업데이트
-        } else {
-           // 이동 불가 피드백 (화면 흔들리거나 색상 깜박임 등)
-           this.cameras.main.shake(100, 0.005);
-        }
-      });
-    });
-
-    // 플레이어 토큰 초기 셋팅 후 바로 한 번 화면을 징검다리처럼 갱신
-    this.updateNodesVisibility(allNodes, nodeSpritesMap);
-
-    // 플레이어 마커 핀: PreloadScene에서 자른 row4_0 ~ row4_2 프레임 사용
-    // 맵 이동 시 가운데로 정렬하기 위해 오프셋 수치(-20, +10)를 제거
-    this.playerToken = this.add.sprite(startNode.x, startNode.y, 'map_nodes', 'row4_0');
-    this.playerToken.setScale(0.4); // 핀 스케일 축소
-    this.playerToken.setOrigin(0.5, 0.5); // 앵커 포인트를 정중앙으로 명시적 설정
-    this.playerToken.setDepth(10); // 토큰이 가장 위에 보이도록
-    
-    // 카메라는 플레이어를 계속 부드럽게 따라다님
-    this.cameras.main.startFollow(this.playerToken, true, 0.05, 0.05);
-
-    // ESC 키로 일시정지 메뉴 호출
-    this.input.keyboard?.on('keydown-ESC', () => {
-       this.togglePauseMenu(width, height);
-    });
-
-    // 우측 하단 덱 확인 창 생성
-    this.createDeckWindow(width, height);
-  }
-
-  playerToken!: Phaser.GameObjects.Sprite;
-  currentNodeId: number = -1;
-  pauseMenuContainer!: Phaser.GameObjects.Container;
-  deckWindowContainer!: Phaser.GameObjects.Container;
-  // 패널 닫힘 상태에서 Y 오프셋 (0 = 완전 닫힘, -panelH = 완전 열림)
-  deckPanelOffsetY: number = 0;
-  isPaused: boolean = false;
-  isMoving: boolean = false;
-
-  // 덱 패널 UI를 카메라 위치에 맞춰 매 프레임 동기화
-  update() {
-    if (!this.deckWindowContainer || !this.cameras.main) return;
-
-    const cam = this.cameras.main;
-    const zoom = cam.zoom;
-    const { width, height } = this.scale;
-
-    const handleH = 34;
-    // 화면 전체 너비를 월드 좌표로 환산
-    const viewW = width / zoom;
-
-    // 카메라 좌측 하단 월드 좌표
-    const worldLeft   = cam.midPoint.x - viewW / 2;
-    const worldBottom = cam.midPoint.y + (height / 2) / zoom;
-
-    const targetX = worldLeft;
-    const targetY = worldBottom + this.deckPanelOffsetY - handleH;
-
-    this.deckWindowContainer.setPosition(targetX, targetY);
-  }
-
-  createDeckWindow(width: number, height: number) {
-    // 화면 전체 너비 사용 (zoom 고려)
-    const zoom = this.cameras.main.zoom;
-    const panelW = Math.round(width / zoom);
-    const panelH = 350;
-    const handleW = 120;
-    const handleH = 34;
-    // 핸들을 패널 중앙에 배치
-    const handleX = (panelW - handleW) / 2;
-    const handleY = 0;
-
-    // 컨테이너는 update()가 매 프레임 올바른 월드 좌표로 동기화
-    this.deckWindowContainer = this.add.container(0, 0);
-    this.deckWindowContainer.setDepth(50);
-
-    // 1. 핸들 배경
-    const handleGraphics = this.add.graphics();
-    handleGraphics.fillStyle(0xd4af37, 1);
-    handleGraphics.fillRoundedRect(handleX, handleY, handleW, handleH, { tl: 10, tr: 10, bl: 0, br: 0 } as any);
-
-    const deckText = i18n.t('deck');
-    const handleText = this.add.text(handleX + handleW / 2, handleY + handleH / 2, deckText + ' \u25b2', {
-      fontFamily: 'SBAggroM',
-      fontSize: '14px',
-      color: '#000000',
-    }).setOrigin(0.5);
-
-    // 핸들 클릭 영역
-    const handleZone = this.add.zone(handleX + handleW / 2, handleY + handleH / 2, handleW, handleH);
-    handleZone.setInteractive({ useHandCursor: true });
-
-    // 2. 패널 본체 배경
-    const panelBg = this.add.graphics();
-    panelBg.fillStyle(0x2a2a2a, 0.95);
-    panelBg.lineStyle(2, 0xd4af37, 1);
-    panelBg.fillRoundedRect(0, handleH, panelW, panelH, { tl: 10, tr: 0, bl: 0, br: 0 } as any);
-    panelBg.strokeRoundedRect(0, handleH, panelW, panelH, { tl: 10, tr: 0, bl: 0, br: 0 } as any);
-
-    // 맵 터치 방지 영역
-    const panelBlockZone = this.add.zone(panelW / 2, handleH + panelH / 2, panelW, panelH);
-    panelBlockZone.setInteractive();
-
-    // 3. 좌측: 캐릭터 정보
-    const leftW = panelW * 0.4;
-    const leftTitle = this.add.text(leftW / 2, handleH + 25, '\ucce0\ub9ad\ud130 \uc815\ubcf4', {
-      fontFamily: 'SBAggroB',
-      fontSize: '16px',
-      color: '#d4af37'
-    }).setOrigin(0.5);
-
-    const leftContent = this.add.text(20, handleH + 55,
-      '\u2022 HP: 100/100\n\u2022 MP: 50/50\n\u2022 \uacf5\uaca9\ub825: 15\n\u2022 \ubc29\uc5b4\ub825: 5\n\n(\ucce0\ub9ad\ud130 \uc774\ubbf8\uc9c0)', {
-      fontFamily: 'SBAggroM',
-      fontSize: '14px',
-      color: '#e6d8b8',
-      lineSpacing: 10
-    });
-
-    // 중앙 구분선
-    panelBg.lineStyle(1, 0x666666, 1);
-    panelBg.lineBetween(leftW, handleH + 20, leftW, handleH + panelH - 20);
-
-    // 4. 우측: 덱 카드 목록
-    const rightW = panelW * 0.6;
-    const rightTitle = this.add.text(leftW + rightW / 2, handleH + 25, '\ud604\uc7ac \ub371 \ub9ac\uc2a4\ud2b8', {
-      fontFamily: 'SBAggroB',
-      fontSize: '16px',
-      color: '#d4af37'
-    }).setOrigin(0.5);
-
-    const rightContent = this.add.text(leftW + 20, handleH + 55,
-      '[\ubcf4\uc720 \uce74\ub4dc \ubaa9\ub85d]\n\n\u2022 \uc77c\ubc18 \ud0c0\uaca9 (\ube44\uc6a9 1, \ud53c\ud574 6)\n\u2022 \uc77c\ubc18 \ubc29\uc5b4 (\ube44\uc6a9 1, \ubc29\uc5b4\ub3c4 5)\n\u2022 \ucc0c\ub974\uae30 (\ube44\uc6a9 1, \ud53c\ud574 9)\n\u2022 \ubd88\uaf43 \uc1a1\uace3\ub2c8 (\ube44\uc6a9 2, \ud53c\ud574 12)\n\n* \uc2e4\uc81c \ub371 \uc815\ubcf4\uac00 \uc5f0\ub3d9\ub420 \uc608\uc815\uc785\ub2c8\ub2e4.', {
-      fontFamily: 'SBAggroM',
-      fontSize: '14px',
-      color: '#e6d8b8',
-      wordWrap: { width: rightW - 40 },
-      lineSpacing: 8
-    });
-
-    this.deckWindowContainer.add([
-      panelBg, panelBlockZone,
-      handleGraphics, handleText, handleZone,
-      leftTitle, leftContent,
-      rightTitle, rightContent
-    ]);
-
-    // 5. 클릭 토글: deckPanelOffsetY를 addCounter로 애니메이션
-    let isPanelOpen = false;
-    const closedOffset = 0;
-    const openedOffset = -panelH;
-
-    const togglePanel = (toOpen: boolean) => {
-      isPanelOpen = toOpen;
-      handleText.setText(deckText + (isPanelOpen ? ' \u25bc' : ' \u25b2'));
-      const from = this.deckPanelOffsetY;
-      const to = isPanelOpen ? openedOffset : closedOffset;
-
-      this.tweens.addCounter({
-        from,
-        to,
-        duration: 350,
-        ease: 'Cubic.easeOut',
-        onUpdate: (tween) => {
-          this.deckPanelOffsetY = tween.getValue() ?? this.deckPanelOffsetY;
-        }
-      });
-    };
-
-    handleZone.on('pointerdown', () => {
-      togglePanel(!isPanelOpen);
-    });
-
-    // 호버 효과
-    handleZone.on('pointerover', () => {
-      handleGraphics.clear();
-      handleGraphics.fillStyle(0xf5cc4a, 1);
-      handleGraphics.fillRoundedRect(handleX, handleY, handleW, handleH, { tl: 10, tr: 10, bl: 0, br: 0 } as any);
-    });
-    handleZone.on('pointerout', () => {
-      handleGraphics.clear();
-      handleGraphics.fillStyle(0xd4af37, 1);
-      handleGraphics.fillRoundedRect(handleX, handleY, handleW, handleH, { tl: 10, tr: 10, bl: 0, br: 0 } as any);
-    });
-  }
-
-  togglePauseMenu(width: number, height: number) {
-    if (this.isPaused || this.isMoving) return; // 이미 퍼즈 상태거나 이동 중이면 넘김
-    this.isPaused = true;
-
-    const cam = this.cameras.main;
-
-    // 메뉴를 담을 컨테이너 생성 (카메라가 현재 보고 있는 정중앙 월드 좌표에 배치)
-     // setScrollFactor(0)는 줌(Zoom) 상태에서 클릭 영역(Hit Area) 왜곡 버그를 일으킬 수 있으므로 제거합니다.
-     this.pauseMenuContainer = this.add.container(cam.midPoint.x, cam.midPoint.y);
-     this.pauseMenuContainer.setDepth(100);
-
-     // 어두운 배경 (딤 처리)
-     const backdrop = this.add.graphics();
-     backdrop.fillStyle(0x000000, 0.7);
-     
-     // 해상도나 줌을 고려해 넉넉한 사이즈로 화면 전체를 덮게 세팅
-     const bgW = width * 3;
-     const bgH = height * 3;
-     backdrop.fillRect(-bgW / 2, -bgH / 2, bgW, bgH);
-     backdrop.setInteractive(new Phaser.Geom.Rectangle(-bgW / 2, -bgH / 2, bgW, bgH), Phaser.Geom.Rectangle.Contains);
-
-     // 일시정지 타이틀
-     const titleText = this.add.text(0, -120, i18n.t('pause'), {
-      fontFamily: 'SBAggroB',
-      fontSize: '48px',
-      color: '#ffffff'
-     }).setOrigin(0.5);
-
-     // 버튼 공통 스타일
-     const btnStyle: Phaser.Types.GameObjects.Text.TextStyle = {
-         fixedWidth: 140,
-         fixedHeight: 100,
-         fontFamily: 'SBAggroM',
-         fontSize: '20px',
-         color: '#e6d8b8',
-         backgroundColor: '#222222',
-         align: 'center',
-         padding: { top: 15, left: 5, right: 5}
-     };
-
-     // 1. 도움말 버튼 (왼쪽)
-     const helpBtn = this.add.text(-160, 20, `?\n\n${i18n.t('help')}`, btnStyle)
-         .setOrigin(0.5).setInteractive({ useHandCursor: true });
-
-     helpBtn.on('pointerdown', () => {
-         // TODO: 도움말 기능 추가 (현재는 팝업 애니메이션 정도만)
-         this.tweens.add({ targets: helpBtn, scale: 0.9, yoyo: true, duration: 100 });
-         console.log('도움말 클릭됨');
-     });
-     helpBtn.on('pointerover', () => helpBtn.setColor('#ffdb58').setScale(1.05));
-     helpBtn.on('pointerout', () => helpBtn.setColor('#e6d8b8').setScale(1));
-
-     // 2. 재개하기 버튼 (가운데)
-     const resumeBtn = this.add.text(0, 20, `▶\n\n${i18n.t('resume')}`, btnStyle)
-         .setOrigin(0.5).setInteractive({ useHandCursor: true });
-
-     resumeBtn.on('pointerdown', () => {
-         this.isPaused = false;
-         this.pauseMenuContainer.destroy();
-     });
-     resumeBtn.on('pointerover', () => resumeBtn.setColor('#ffdb58').setScale(1.05));
-     resumeBtn.on('pointerout', () => resumeBtn.setColor('#e6d8b8').setScale(1));
-
-     // 3. 메인 메뉴 버튼 (오른쪽)
-     const mainMenuBtn = this.add.text(160, 20, `⌂\n\n${i18n.t('mainMenu')}`, btnStyle)
-         .setOrigin(0.5).setInteractive({ useHandCursor: true });
-
-     mainMenuBtn.on('pointerdown', () => {
-         this.isPaused = false;
-         this.scene.start('IntroScene'); // 인트로 씬으로 되돌아감
-     });
-     mainMenuBtn.on('pointerover', () => mainMenuBtn.setColor('#ffdb58').setScale(1.05));
-     mainMenuBtn.on('pointerout', () => mainMenuBtn.setColor('#e6d8b8').setScale(1));
-
-     // 컨테이너에 조립
-     this.pauseMenuContainer.add([backdrop, titleText, helpBtn, resumeBtn, mainMenuBtn]);
-  }
-
-  // 플레이어 이동 후 노드들의 투명도 등을 일괄 업데이트하는 메서드
-  updateNodesVisibility(allNodes: MapNode[], nodeSpritesMap: Map<number, Phaser.GameObjects.Sprite | Phaser.GameObjects.Graphics>) {
-      const currentNode = allNodes.find(n => n.id === this.currentNodeId);
-      if (!currentNode) return;
-
-      const currentLayer = currentNode.layer;
-
-      allNodes.forEach(node => {
-          const sprite = nodeSpritesMap.get(node.id);
-          if (!sprite || node.layer === 0) return; // 0번 레이어(큰 점)는 제외
-
-          // Sprite 타입 필터링
-          if (sprite instanceof Phaser.GameObjects.Sprite) {
-              // 1. 이미 지나간 아래(과거) 레이어 혹은 지금 서 있는 레이어의 다른 노드
-              if (node.layer <= currentLayer && node.id !== this.currentNodeId) {
-                  sprite.setAlpha(0.3); // 투명도 확 낮춰서 disable 효과
-                  sprite.setScale(0.6); // 크기도 줄임
-                  sprite.setTint(0x888888); // 색도 회색빛으로 다운
-              } 
-              // 2. 현재 내 위치의 노드 (지금 밟고 있는 곳)
-              else if (node.id === this.currentNodeId) {
-                  sprite.setAlpha(1.0);
-                  sprite.setScale(0.8);
-                  sprite.clearTint();
-              }
-              // 3. 앞으로 갈 수 있는 미래방향 노드들 중, 바로 다음 연결된 타겟
-              else if (node.layer === currentLayer + 1 && currentNode.nextNodes.includes(node.id)) {
-                  sprite.setAlpha(1.0); // 선명하게
-                  sprite.setScale(0.8);
-                  sprite.clearTint();
-                  
-                  // 살짝 펄스 느낌의 이펙트
-                  this.tweens.add({
-                      targets: sprite,
-                      scale: 0.85,
-                      yoyo: true,
-                      repeat: -1,
-                      duration: 800
-                  });
-              } 
-              // 4. 아예 연결되어 있지 않은 머나먼 미래 노드들 또는 못 가는 곳
-              else {
-                  sprite.setAlpha(0.6); // 아직 비활성화 상태까진 아니지만 약간 흐리게
-                  sprite.setScale(0.7);
-                  sprite.clearTint();
-                  this.tweens.killTweensOf(sprite); // 기존 애니메이션 정리
-              }
-          }
-      });
-  }
-
-  movePlayer(targetX: number, targetY: number) {
-    if (!this.playerToken) return;
-    
-    // 이동 시작
-    this.isMoving = true;
-
-    // 이전 애니메이션이 있다면 취소
-    this.tweens.killTweensOf(this.playerToken);
-
-    // X, Y 중간 지점을 계산 (포물선 점프의 정점 역할)
-    const midX = (this.playerToken.x + targetX) / 2;
-    const midY = (this.playerToken.y + targetY) / 2 - 50; // 살짝 위로 들리는 높이
-
-    // 1. 사람이 말을 짚고 들어 올리는 모션 (크기 증가, 살짝 기울임)
-    this.tweens.add({
-      targets: this.playerToken,
-      x: midX,
-      y: midY,
-      scaleX: 0.6,
-      scaleY: 0.6,
-      angle: 15, // 살짝 들리면서 기우뚱
-      duration: 250,
-      ease: 'Sine.easeOut',
-      onComplete: () => {
-        // 2. 새로운 위치에 '탁!' 하고 내려놓는 모션 (원래 크기/각도로 돌아오면서 바운스)
-        this.tweens.add({
-          targets: this.playerToken,
-          x: targetX,
-          y: targetY,
-          scaleX: 0.4, // 기존 스케일
-          scaleY: 0.4,
-          angle: 0,
-          duration: 500,
-          ease: 'Bounce.easeOut', // 내려놓을 때 탁-타닥! 하는 진동 느낌
-          onComplete: () => {
-            this.isMoving = false; // 이동 완료 후 상태 해제
-          }
-        });
-      }
-    });
-  }
-
-  // Hash 값을 기반으로 항상 동일한 형태의 맵을 생성 (시드 랜덤 제너레이터)
-  generateMapData(hash: string, width: number, height: number): MapNode[][] {
-    let seed = 0;
-    for (let i = 0; i < hash.length; i++) {
-        seed = ((seed << 5) - seed) + hash.charCodeAt(i);
-        seed |= 0;
-    }
-
-    // 간단한 LCG(Linear Congruential Generator) 난수 생성기
-    const random = () => {
-        seed = (seed * 9301 + 49297) % 233280;
-        if (seed < 0) seed += 233280; // 자바스크립트의 % 연산자는 음수를 반환할 수 있으므로 보정
-        return seed / 233280;
-    };
-    const randInt = (min: number, max: number) => Math.floor(random() * (max - min + 1)) + min;
-
-    const mapLayersData: MapNode[][] = [];
-    let nodeId = 0;
-    const numLayers = 8; // Layer 0 ~ 7
-    const layerSpacingY = (height - 600) / (numLayers - 1);
-
-    for (let layer = 0; layer < numLayers; layer++) {
-      const currentLayerNodes: MapNode[] = [];
-      const y = height - 200 - (layer * layerSpacingY);
-      
-      let numNodes = 1;
-      if (layer === 0 || layer === numLayers - 1) {
-          numNodes = 1; // 시작점과 최종 보스는 1개
-      } else {
-          numNodes = randInt(2, 4); // 중간 레이어는 2~4개 노드 무작위
-      }
-
-      const spacingX = width / (numNodes + 1);
-
-      for (let i = 0; i < numNodes; i++) {
-          let nodeType = 1; 
-          // layer가 0인 노드는 이미지를 사용하지 않을 것이므로 type 0을 무시해도 됩니다.
-          if (layer === 0) nodeType = 0; 
-          else if (layer === numLayers - 1) nodeType = randInt(10, 13); // 보스 (10~13 중 하나)
-          // 몬스터와 카드의 비율 조정이 필요하다면 여기서 (1~9 사이를 조절)
-          else nodeType = randInt(0, 9); // 일반/이벤트/카드류는 0~9 랜덤 뽑기
-
-          currentLayerNodes.push({
-              id: nodeId++,
-              layer: layer,
-              x: spacingX * (i + 1) + randInt(-40, 40),      // X축 위치 랜덤성 (구불구불)
-              y: y + (layer === 0 || layer === numLayers - 1 ? 0 : randInt(-20, 20)), // Y축도 살짝 흔듦
-              type: nodeType,
-              nextNodes: []
-          });
-      }
-      mapLayersData.push(currentLayerNodes);
-    }
-
-    // 맵 노드를 레이어별로 위로 향하도록 연결 (Edge 생성을 해시 기반 랜덤으로)
-    for (let layer = 0; layer < numLayers - 1; layer++) {
-      const currentLayer = mapLayersData[layer];
-      const nextLayer = mapLayersData[layer + 1];
-
-      currentLayer.forEach((node, idx) => {
-          // 다음 레이어에서 가장 가까운 비율의 노드 하나는 무조건 연결을 보장
-          const ratio = idx / Math.max(1, currentLayer.length - 1);
-          const nextIdx = Math.round(ratio * (nextLayer.length - 1));
-          
-          node.nextNodes.push(nextLayer[nextIdx].id);
-
-          // 30% 확률로 이웃한 다른 노드와도 연결되는 분기점 생성
-          if (random() < 0.3 && nextLayer.length > 1) {
-             const extraIdx = (nextIdx + 1) % nextLayer.length;
-             if (!node.nextNodes.includes(nextLayer[extraIdx].id)) {
-                 node.nextNodes.push(nextLayer[extraIdx].id);
-             }
-          }
-      });
-
-      // 혹시 다음 레이어에서 고립된 노드(아무도 연결해주지 않은)가 있는지 방어 코드
-      nextLayer.forEach((nextNode, nextIdx) => {
-          const isLinked = currentLayer.some(node => node.nextNodes.includes(nextNode.id));
-          if (!isLinked) {
-              const ratio = nextIdx / Math.max(1, nextLayer.length - 1);
-              const currIdx = Math.round(ratio * (currentLayer.length - 1));
-              if (!currentLayer[currIdx].nextNodes.includes(nextNode.id)) {
-                currentLayer[currIdx].nextNodes.push(nextNode.id);
-              }
-          }
-      });
-    }
-
-    return mapLayersData;
-  }
-}
+// ─── 인터페이스 ───────────────────────────────────────────────────────────────
 
 export interface MapNode {
   id: number;
@@ -626,4 +33,583 @@ export interface MapNode {
   y: number;
   type: number;
   nextNodes: number[];
+}
+
+type NodeSprite = Phaser.GameObjects.Sprite | Phaser.GameObjects.Graphics;
+
+// ─── 클래스 ───────────────────────────────────────────────────────────────────
+
+export default class MainScene extends Phaser.Scene {
+  // ── 상태 필드 ────────────────────────────────────────────────────────────────
+  private isContinue = false;
+  private isPaused   = false;
+  private isMoving   = false;
+  private currentNodeId = -1;
+
+  // 덱 패널 Y 오프셋 (0 = 완전 닫힘, -panelH = 완전 열림)
+  private deckPanelOffsetY = 0;
+
+  // ── 게임 오브젝트 참조 ────────────────────────────────────────────────────────
+  private playerToken!: Phaser.GameObjects.Sprite;
+  private pauseMenuContainer!: Phaser.GameObjects.Container;
+  private deckWindowContainer!: Phaser.GameObjects.Container;
+
+  constructor() {
+    super('MainScene');
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Phaser 라이프사이클
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /** IntroScene에서 전달된 data를 받습니다 */
+  init(data: { isContinue?: boolean }) {
+    this.isContinue = data?.isContinue ?? false;
+  }
+
+  async create() {
+    const { width, height } = this.scale;
+    const mapWorldWidth = Math.max(width, 1000);
+
+    this.initCamera(mapWorldWidth);
+    this.initBackground(mapWorldWidth);
+
+    const mapHash      = await this.loadOrCreateMapHash();
+    const mapLayersData = this.generateMapData(mapHash, mapWorldWidth, MAP_WORLD_HEIGHT);
+    const allNodes      = mapLayersData.flat();
+    const startNode     = mapLayersData[0][0];
+
+    this.currentNodeId = startNode.id;
+
+    this.drawNodePaths(allNodes);
+
+    const nodeSpritesMap = this.createNodeSprites(allNodes);
+    this.updateNodesVisibility(allNodes, nodeSpritesMap);
+
+    this.createPlayerToken(startNode);
+    this.setupInput(width, height);
+    this.createDeckWindow(width, height);
+
+    // 노드 클릭 이벤트 등록 (allNodes, nodeSpritesMap 클로저로 사용)
+    this.registerNodeClickEvents(allNodes, nodeSpritesMap);
+  }
+
+  /** 매 프레임: 덱 패널을 카메라 위치에 동기화 */
+  update() {
+    if (!this.deckWindowContainer || !this.cameras.main) return;
+
+    const cam   = this.cameras.main;
+    const zoom  = cam.zoom;
+    const { width, height } = this.scale;
+
+    const viewW       = width / zoom;
+    const worldLeft   = cam.midPoint.x - viewW / 2;
+    const worldBottom = cam.midPoint.y + (height / 2) / zoom;
+
+    this.deckWindowContainer.setPosition(
+      worldLeft,
+      worldBottom + this.deckPanelOffsetY - DECK_PANEL_HANDLE_H,
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // create() 초기화 세부 메서드
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  private initCamera(mapWorldWidth: number) {
+    this.cameras.main.setBounds(0, 0, mapWorldWidth, MAP_WORLD_HEIGHT);
+    this.cameras.main.setZoom(MAP_ZOOM);
+  }
+
+  private initBackground(mapWorldWidth: number) {
+    const bg = this.add.image(mapWorldWidth / 2, MAP_WORLD_HEIGHT / 2, 'map_bg');
+    bg.setDisplaySize(mapWorldWidth, MAP_WORLD_HEIGHT);
+  }
+
+  /** 이어하기면 세이브 파일에서 해시 로드, 없으면 새로 생성 후 저장 */
+  private async loadOrCreateMapHash(): Promise<string> {
+    if (this.isContinue) {
+      const loaded = await this.loadGameFromElectron();
+      if (loaded) return loaded;
+    }
+    return this.createAndSaveNewHash();
+  }
+
+  private async loadGameFromElectron(): Promise<string | null> {
+    // @ts-ignore
+    if (typeof require === 'undefined') return null;
+    try {
+      const { ipcRenderer } = require('electron');
+      const result = await ipcRenderer.invoke('load-game');
+      if (result?.success && result.data?.mapHash) {
+        console.log('기존 맵 해시 자동 로드 성공(Electron):', result.data.mapHash);
+        return result.data.mapHash;
+      }
+    } catch {
+      console.warn('Electron 로드 실패, 새 해시 생성 대기');
+    }
+    return null;
+  }
+
+  private async createAndSaveNewHash(): Promise<string> {
+    const mapHash = `stage_${Date.now()}_${Math.floor(Math.random() * 999999)}`;
+    console.log('새로운 맵 해시 생성됨:', mapHash);
+
+    // @ts-ignore
+    if (typeof require !== 'undefined') {
+      try {
+        const { ipcRenderer } = require('electron');
+        await ipcRenderer.invoke('save-game', { mapHash });
+      } catch (e) {
+        console.warn('Electron 세이브 실패', e);
+      }
+    }
+    return mapHash;
+  }
+
+  /** 노드 간 점선 경로 그리기 */
+  private drawNodePaths(allNodes: MapNode[]) {
+    const g = this.add.graphics();
+    g.fillStyle(0xffffff, 1);
+    g.lineStyle(2, 0x000000, 1);
+
+    allNodes.forEach(node => {
+      node.nextNodes.forEach(nextId => {
+        const nextNode = allNodes.find(n => n.id === nextId);
+        if (!nextNode) return;
+
+        const dist     = Phaser.Math.Distance.Between(node.x, node.y, nextNode.x, nextNode.y);
+        const dotCount = Math.floor(dist / 20);
+
+        for (let i = 1; i < dotCount; i++) {
+          const t = i / dotCount;
+          const px = Phaser.Math.Linear(node.x, nextNode.x, t);
+          const py = Phaser.Math.Linear(node.y, nextNode.y, t);
+          g.fillCircle(px, py, 4);
+          g.strokeCircle(px, py, 4);
+        }
+      });
+    });
+  }
+
+  /** 노드 스프라이트(또는 시작점 그래픽) 생성 후 Map 반환 */
+  private createNodeSprites(allNodes: MapNode[]): Map<number, NodeSprite> {
+    const nodeSpritesMap = new Map<number, NodeSprite>();
+
+    allNodes.forEach(node => {
+      if (node.layer === 0) {
+        // 시작 점: 흰 원 + 검정 테두리
+        const dot = this.add.graphics();
+        dot.fillStyle(0xffffff, 1);
+        dot.lineStyle(3, 0x000000, 1);
+        dot.fillCircle(node.x, node.y, 16);
+        dot.strokeCircle(node.x, node.y, 16);
+        nodeSpritesMap.set(node.id, dot);
+        return;
+      }
+
+      const frameName = this.getNodeFrameName(node.type);
+      const sprite    = this.add.sprite(node.x, node.y, 'map_nodes', frameName);
+      sprite.setScale(NODE_SCALE_DEFAULT);
+      sprite.setInteractive({ useHandCursor: true });
+      nodeSpritesMap.set(node.id, sprite);
+
+      sprite.on('pointerover', () => {
+        if (sprite.alpha < 1) return;
+        sprite.setScale(NODE_SCALE_HOVER);
+      });
+      sprite.on('pointerout', () => {
+        sprite.setScale(sprite.alpha < 1 ? NODE_SCALE_PASSED : NODE_SCALE_DEFAULT);
+      });
+    });
+
+    return nodeSpritesMap;
+  }
+
+  /** 노드 클릭 이벤트 별도 등록 (create 이후 nodeSpritesMap 참조 필요) */
+  private registerNodeClickEvents(
+    allNodes: MapNode[],
+    nodeSpritesMap: Map<number, NodeSprite>,
+  ) {
+    allNodes.forEach(node => {
+      if (node.layer === 0) return;
+
+      const sprite = nodeSpritesMap.get(node.id);
+      if (!(sprite instanceof Phaser.GameObjects.Sprite)) return;
+
+      sprite.on('pointerdown', () => {
+        if (this.isPaused || this.isMoving) return;
+
+        const currentNode = allNodes.find(n => n.id === this.currentNodeId);
+        if (!currentNode) {
+          this.cameras.main.shake(100, 0.005);
+          return;
+        }
+
+        if (currentNode.nextNodes.includes(node.id)) {
+          this.movePlayer(node.x, node.y);
+          this.currentNodeId = node.id;
+          this.updateNodesVisibility(allNodes, nodeSpritesMap);
+        } else {
+          this.cameras.main.shake(100, 0.005);
+        }
+      });
+    });
+  }
+
+  private createPlayerToken(startNode: MapNode) {
+    this.playerToken = this.add.sprite(startNode.x, startNode.y, 'map_nodes', 'row4_0');
+    this.playerToken.setScale(TOKEN_SCALE_IDLE);
+    this.playerToken.setOrigin(0.5, 0.5);
+    this.playerToken.setDepth(10);
+    this.cameras.main.startFollow(this.playerToken, true, 0.05, 0.05);
+  }
+
+  private setupInput(width: number, height: number) {
+    this.input.keyboard?.on('keydown-ESC', () => {
+      this.togglePauseMenu(width, height);
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 덱 패널
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  private createDeckWindow(width: number, height: number) {
+    const zoom    = this.cameras.main.zoom;
+    const panelW  = Math.round(width  / zoom);
+    const panelH  = Math.round(height / zoom) - DECK_PANEL_HANDLE_H;
+    const handleX = (panelW - DECK_PANEL_HANDLE_W) / 2;
+    const handleY = 0;
+
+    this.deckWindowContainer = this.add.container(0, 0);
+    this.deckWindowContainer.setDepth(50);
+
+    // 핸들 배경
+    const handleGraphics = this.add.graphics();
+    this.drawHandleGraphics(handleGraphics, handleX, handleY, DECK_COLOR_GOLD);
+
+    const deckText   = i18n.t('deck');
+    const handleText = this.add.text(
+      handleX + DECK_PANEL_HANDLE_W / 2,
+      handleY + DECK_PANEL_HANDLE_H / 2,
+      `${deckText} ▲`,
+      { fontFamily: 'SBAggroM', fontSize: '14px', color: '#000000' },
+    ).setOrigin(0.5);
+
+    const handleZone = this.add.zone(
+      handleX + DECK_PANEL_HANDLE_W / 2,
+      handleY + DECK_PANEL_HANDLE_H / 2,
+      DECK_PANEL_HANDLE_W,
+      DECK_PANEL_HANDLE_H,
+    ).setInteractive({ useHandCursor: true });
+
+    // 패널 본체
+    const panelBg = this.add.graphics();
+    panelBg.fillStyle(DECK_COLOR_BG, 0.95);
+    panelBg.lineStyle(2, DECK_COLOR_GOLD, 1);
+    panelBg.fillRoundedRect(0, DECK_PANEL_HANDLE_H, panelW, panelH, PANEL_RADIUS);
+    panelBg.strokeRoundedRect(0, DECK_PANEL_HANDLE_H, panelW, panelH, PANEL_RADIUS);
+
+    // 맵 터치 방지 투명 영역
+    const panelBlockZone = this.add
+      .zone(panelW / 2, DECK_PANEL_HANDLE_H + panelH / 2, panelW, panelH)
+      .setInteractive();
+
+    // 좌측: 캐릭터 정보
+    const leftW      = panelW * 0.4;
+    const leftTitle  = this.add.text(leftW / 2, DECK_PANEL_HANDLE_H + 25, '캐릭터 정보', {
+      fontFamily: 'SBAggroB', fontSize: '16px', color: '#d4af37',
+    }).setOrigin(0.5);
+    const leftContent = this.add.text(20, DECK_PANEL_HANDLE_H + 55,
+      '• HP: 100/100\n• MP: 50/50\n• 공격력: 15\n• 방어력: 5\n\n(캐릭터 이미지)',
+      { fontFamily: 'SBAggroM', fontSize: '14px', color: '#e6d8b8', lineSpacing: 10 },
+    );
+
+    // 중앙 구분선
+    panelBg.lineStyle(1, 0x666666, 1);
+    panelBg.lineBetween(leftW, DECK_PANEL_HANDLE_H + 20, leftW, DECK_PANEL_HANDLE_H + panelH - 20);
+
+    // 우측: 덱 카드 목록
+    const rightW      = panelW * 0.6;
+    const rightTitle  = this.add.text(leftW + rightW / 2, DECK_PANEL_HANDLE_H + 25, '현재 덱 리스트', {
+      fontFamily: 'SBAggroB', fontSize: '16px', color: '#d4af37',
+    }).setOrigin(0.5);
+    const rightContent = this.add.text(leftW + 20, DECK_PANEL_HANDLE_H + 55,
+      '[보유 카드 목록]\n\n• 일반 타격 (비용 1, 피해 6)\n• 일반 방어 (비용 1, 방어도 5)\n• 찌르기 (비용 1, 피해 9)\n• 불꽃 송곳니 (비용 2, 피해 12)\n\n* 실제 덱 정보가 연동될 예정입니다.',
+      { fontFamily: 'SBAggroM', fontSize: '14px', color: '#e6d8b8', wordWrap: { width: rightW - 40 }, lineSpacing: 8 },
+    );
+
+    this.deckWindowContainer.add([
+      panelBg, panelBlockZone,
+      handleGraphics, handleText, handleZone,
+      leftTitle, leftContent,
+      rightTitle, rightContent,
+    ]);
+
+    // 패널 토글 애니메이션
+    let isPanelOpen  = false;
+    const openOffset = -panelH;
+
+    const togglePanel = (toOpen: boolean) => {
+      isPanelOpen = toOpen;
+      handleText.setText(`${deckText} ${isPanelOpen ? '▼' : '▲'}`);
+      const from = this.deckPanelOffsetY;
+      const to   = isPanelOpen ? openOffset : 0;
+
+      this.tweens.addCounter({
+        from, to,
+        duration: 350,
+        ease: 'Cubic.easeOut',
+        onUpdate: tween => {
+          this.deckPanelOffsetY = tween.getValue() ?? this.deckPanelOffsetY;
+        },
+      });
+    };
+
+    handleZone.on('pointerdown', () => togglePanel(!isPanelOpen));
+    handleZone.on('pointerover', () => this.drawHandleGraphics(handleGraphics, handleX, handleY, DECK_COLOR_GOLD_HVR));
+    handleZone.on('pointerout',  () => this.drawHandleGraphics(handleGraphics, handleX, handleY, DECK_COLOR_GOLD));
+  }
+
+  /** 핸들 그래픽 (re)draw 헬퍼 */
+  private drawHandleGraphics(g: Phaser.GameObjects.Graphics, x: number, y: number, color: number) {
+    g.clear();
+    g.fillStyle(color, 1);
+    g.fillRoundedRect(x, y, DECK_PANEL_HANDLE_W, DECK_PANEL_HANDLE_H, HANDLE_RADIUS);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 일시정지 메뉴
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  private togglePauseMenu(width: number, height: number) {
+    if (this.isPaused || this.isMoving) return;
+    this.isPaused = true;
+
+    const cam = this.cameras.main;
+    // setScrollFactor(0)는 zoom 상태에서 Hit Area 왜곡 버그를 유발하므로 사용하지 않습니다.
+    this.pauseMenuContainer = this.add.container(cam.midPoint.x, cam.midPoint.y);
+    this.pauseMenuContainer.setDepth(100);
+
+    // 딤 배경 (넉넉하게 화면 전체 덮기)
+    const bgW     = width * 3;
+    const bgH     = height * 3;
+    const backdrop = this.add.graphics();
+    backdrop.fillStyle(0x000000, 0.7);
+    backdrop.fillRect(-bgW / 2, -bgH / 2, bgW, bgH);
+    backdrop.setInteractive(
+      new Phaser.Geom.Rectangle(-bgW / 2, -bgH / 2, bgW, bgH),
+      Phaser.Geom.Rectangle.Contains,
+    );
+
+    const titleText = this.add.text(0, -120, i18n.t('pause'), {
+      fontFamily: 'SBAggroB', fontSize: '48px', color: '#ffffff',
+    }).setOrigin(0.5);
+
+    const btnStyle: Phaser.Types.GameObjects.Text.TextStyle = {
+      fixedWidth: 140, fixedHeight: 100,
+      fontFamily: 'SBAggroM', fontSize: '20px',
+      color: '#e6d8b8', backgroundColor: '#222222',
+      align: 'center', padding: { top: 15, left: 5, right: 5 },
+    };
+
+    const helpBtn = this.createPauseButton(-160, 20, `?\n\n${i18n.t('help')}`, btnStyle, () => {
+      this.tweens.add({ targets: helpBtn, scale: 0.9, yoyo: true, duration: 100 });
+      console.log('도움말 클릭됨');
+    });
+
+    const resumeBtn = this.createPauseButton(0, 20, `▶\n\n${i18n.t('resume')}`, btnStyle, () => {
+      this.isPaused = false;
+      this.pauseMenuContainer.destroy();
+    });
+
+    const mainMenuBtn = this.createPauseButton(160, 20, `⌂\n\n${i18n.t('mainMenu')}`, btnStyle, () => {
+      this.isPaused = false;
+      this.scene.start('IntroScene');
+    });
+
+    this.pauseMenuContainer.add([backdrop, titleText, helpBtn, resumeBtn, mainMenuBtn]);
+  }
+
+  /** 일시정지 메뉴 공통 버튼 팩토리 */
+  private createPauseButton(
+    x: number, y: number, label: string,
+    style: Phaser.Types.GameObjects.Text.TextStyle,
+    onDown: () => void,
+  ): Phaser.GameObjects.Text {
+    const btn = this.add.text(x, y, label, style)
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+
+    btn.on('pointerdown', onDown);
+    btn.on('pointerover', () => btn.setColor('#ffdb58').setScale(1.05));
+    btn.on('pointerout',  () => btn.setColor('#e6d8b8').setScale(1));
+    return btn;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 노드 비주얼 업데이트
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  private updateNodesVisibility(allNodes: MapNode[], nodeSpritesMap: Map<number, NodeSprite>) {
+    const currentNode = allNodes.find(n => n.id === this.currentNodeId);
+    if (!currentNode) return;
+
+    const currentLayer = currentNode.layer;
+
+    allNodes.forEach(node => {
+      const sprite = nodeSpritesMap.get(node.id);
+      if (!sprite || node.layer === 0) return;
+      if (!(sprite instanceof Phaser.GameObjects.Sprite)) return;
+
+      if (node.layer <= currentLayer && node.id !== this.currentNodeId) {
+        // 이미 지나간 노드
+        sprite.setAlpha(0.3).setScale(NODE_SCALE_PASSED).setTint(0x888888);
+      } else if (node.id === this.currentNodeId) {
+        // 현재 위치
+        sprite.setAlpha(1).setScale(NODE_SCALE_DEFAULT).clearTint();
+      } else if (node.layer === currentLayer + 1 && currentNode.nextNodes.includes(node.id)) {
+        // 다음 진행 가능 노드 – 펄스 효과
+        sprite.setAlpha(1).setScale(NODE_SCALE_DEFAULT).clearTint();
+        this.tweens.add({ targets: sprite, scale: 0.85, yoyo: true, repeat: -1, duration: 800 });
+      } else {
+        // 아직 갈 수 없는 미래 노드
+        sprite.setAlpha(0.6).setScale(NODE_SCALE_INACTIVE).clearTint();
+        this.tweens.killTweensOf(sprite);
+      }
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 플레이어 이동
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  private movePlayer(targetX: number, targetY: number) {
+    if (!this.playerToken) return;
+    this.isMoving = true;
+    this.tweens.killTweensOf(this.playerToken);
+
+    const midX = (this.playerToken.x + targetX) / 2;
+    const midY = (this.playerToken.y + targetY) / 2 - 50;
+
+    // 들어올리기
+    this.tweens.add({
+      targets: this.playerToken,
+      x: midX, y: midY,
+      scaleX: TOKEN_SCALE_LIFT, scaleY: TOKEN_SCALE_LIFT,
+      angle: 15,
+      duration: 250,
+      ease: 'Sine.easeOut',
+      onComplete: () => {
+        // 내려놓기
+        this.tweens.add({
+          targets: this.playerToken,
+          x: targetX, y: targetY,
+          scaleX: TOKEN_SCALE_IDLE, scaleY: TOKEN_SCALE_IDLE,
+          angle: 0,
+          duration: 500,
+          ease: 'Bounce.easeOut',
+          onComplete: () => { this.isMoving = false; },
+        });
+      },
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 맵 생성 (시드 기반)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /** 노드 type → 스프라이트 프레임 이름 변환 */
+  private getNodeFrameName(type: number): string {
+    if (type < 5)  return `row0_${type}`;
+    if (type < 10) return `row1_${type - 5}`;
+    if (type < 14) return `row2_${type - 10}`;
+    return `row3_${type - 14}`;
+  }
+
+  /** 해시 기반 LCG 시드 난수 생성기 반환 */
+  private buildSeededRandom(hash: string) {
+    let seed = 0;
+    for (let i = 0; i < hash.length; i++) {
+      seed = ((seed << 5) - seed) + hash.charCodeAt(i);
+      seed |= 0;
+    }
+    const random = () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      if (seed < 0) seed += 233280;
+      return seed / 233280;
+    };
+    const randInt = (min: number, max: number) => Math.floor(random() * (max - min + 1)) + min;
+    return { random, randInt };
+  }
+
+  /** 해시값을 기반으로 항상 동일한 맵 데이터를 생성 */
+  private generateMapData(hash: string, width: number, height: number): MapNode[][] {
+    const { random, randInt } = this.buildSeededRandom(hash);
+
+    const mapLayersData: MapNode[][] = [];
+    let nodeId = 0;
+    const layerSpacingY = (height - 600) / (MAP_NUM_LAYERS - 1);
+    const isEdgeLayer   = (l: number) => l === 0 || l === MAP_NUM_LAYERS - 1;
+
+    // 레이어별 노드 생성
+    for (let layer = 0; layer < MAP_NUM_LAYERS; layer++) {
+      const y        = height - 200 - layer * layerSpacingY;
+      const numNodes = isEdgeLayer(layer) ? 1 : randInt(2, 4);
+      const spacingX = width / (numNodes + 1);
+      const nodes: MapNode[] = [];
+
+      for (let i = 0; i < numNodes; i++) {
+        let nodeType: number;
+        if (layer === 0)                  nodeType = 0;
+        else if (layer === MAP_NUM_LAYERS - 1) nodeType = randInt(10, 13);
+        else                              nodeType = randInt(0, 9);
+
+        nodes.push({
+          id: nodeId++,
+          layer,
+          x: spacingX * (i + 1) + randInt(-40, 40),
+          y: y + (isEdgeLayer(layer) ? 0 : randInt(-20, 20)),
+          type: nodeType,
+          nextNodes: [],
+        });
+      }
+      mapLayersData.push(nodes);
+    }
+
+    // 레이어 간 엣지(Edge) 연결
+    for (let layer = 0; layer < MAP_NUM_LAYERS - 1; layer++) {
+      const cur  = mapLayersData[layer];
+      const next = mapLayersData[layer + 1];
+
+      cur.forEach((node, idx) => {
+        const ratio   = idx / Math.max(1, cur.length - 1);
+        const nextIdx = Math.round(ratio * (next.length - 1));
+        node.nextNodes.push(next[nextIdx].id);
+
+        // 30% 확률로 이웃 노드에도 추가 연결
+        if (random() < 0.3 && next.length > 1) {
+          const extraIdx = (nextIdx + 1) % next.length;
+          if (!node.nextNodes.includes(next[extraIdx].id)) {
+            node.nextNodes.push(next[extraIdx].id);
+          }
+        }
+      });
+
+      // 고립 노드 방어: 연결되지 않은 다음 레이어 노드를 강제로 연결
+      next.forEach((nextNode, nextIdx) => {
+        const isLinked = cur.some(n => n.nextNodes.includes(nextNode.id));
+        if (isLinked) return;
+
+        const ratio   = nextIdx / Math.max(1, next.length - 1);
+        const currIdx = Math.round(ratio * (cur.length - 1));
+        if (!cur[currIdx].nextNodes.includes(nextNode.id)) {
+          cur[currIdx].nextNodes.push(nextNode.id);
+        }
+      });
+    }
+
+    return mapLayersData;
+  }
 }
