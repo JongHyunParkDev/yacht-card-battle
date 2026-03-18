@@ -470,9 +470,9 @@ export default class MainScene extends Phaser.Scene {
         // 현재 위치
         sprite.setAlpha(1).setScale(NODE_SCALE_DEFAULT).clearTint();
       } else if (node.layer === currentLayer + 1 && currentNode.nextNodes.includes(node.id)) {
-        // 다음 진행 가능 노드 – 펄스 효과
+        // 다음 진행 가능 노드
+        this.tweens.killTweensOf(sprite);
         sprite.setAlpha(1).setScale(NODE_SCALE_DEFAULT).clearTint();
-        this.tweens.add({ targets: sprite, scale: 0.85, yoyo: true, repeat: -1, duration: 800 });
       } else {
         // 아직 갈 수 없는 미래 노드
         sprite.setAlpha(0.6).setScale(NODE_SCALE_INACTIVE).clearTint();
@@ -520,12 +520,19 @@ export default class MainScene extends Phaser.Scene {
   // 맵 생성 (시드 기반)
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /** 노드 type → 스프라이트 프레임 이름 변환 */
+  /**
+   * 노드 type → 스프라이트 프레임 이름 변환
+   *
+   * type  0~ 4 : row0_0~4  (일반 아이콘 1행, 5개)
+   * type  5~ 9 : row1_0~4  (일반 아이콘 2행, 5개)
+   * type 10~12 : row2_0~2  (보스 1단계, 3개)
+   * type 13~14 : row3_0~1  (보스 2단계, 2개 – row3_3 최종 보스는 맵 생성에서 제외)
+   */
   private getNodeFrameName(type: number): string {
     if (type < 5)  return `row0_${type}`;
     if (type < 10) return `row1_${type - 5}`;
-    if (type < 14) return `row2_${type - 10}`;
-    return `row3_${type - 14}`;
+    if (type < 13) return `row2_${type - 10}`;  // row2_0, row2_1, row2_2
+    return `row3_${type - 13}`;                  // row3_0, row3_1
   }
 
   /** 해시 기반 LCG 시드 난수 생성기 반환 */
@@ -562,9 +569,10 @@ export default class MainScene extends Phaser.Scene {
 
       for (let i = 0; i < numNodes; i++) {
         let nodeType: number;
-        if (layer === 0)                  nodeType = 0;
-        else if (layer === MAP_NUM_LAYERS - 1) nodeType = randInt(10, 13);
-        else                              nodeType = randInt(0, 9);
+        if (layer === 0)                       nodeType = 0;
+        // 마지막 레이어: 보스 타입 10~14 (row2_0~2, row3_0~1); row3_3(최종 보스)은 제외
+        else if (layer === MAP_NUM_LAYERS - 1) nodeType = randInt(10, 14);
+        else                                   nodeType = randInt(0, 9);
 
         nodes.push({
           id: nodeId++,

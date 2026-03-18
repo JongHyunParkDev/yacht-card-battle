@@ -5,10 +5,15 @@ import bg2 from '@src/assets/img/background/background_2.png';
 
 // Import map assets
 import mapBg from '@src/assets/img/map/map_bg.png';
-// map_nodes.png is a sprite image. Width and height comments for slicing:
-// width: 1024, height: 1024 (1x5 layout -> frameWidth: 204.8, frameHeight: 1024 or 204.8 with offset)
-// for simplicity we will treat it as frameWidth: 204, frameHeight: 204 
+// map_nodes.png: 스프라이트 이미지
+// width: 640, height: 800 (5행 × 가변열)
 import mapNodes from '@src/assets/img/map/map_nodes.png';
+
+// Import card assets
+// card-sprite.png: 6행 × 5열, 프레임 크기 370px × 370px
+import cardSprite from '@src/assets/img/card/card-sprite.png';
+// attr-sprite.png: 7개 속성 아이콘 (물/불/풀/번개/돌/일반/별), 각 128px × 128px
+import attrSprite from '@src/assets/img/config/attr-sprite.png';
 
 export default class PreloadScene extends Phaser.Scene {
   constructor() {
@@ -80,16 +85,48 @@ export default class PreloadScene extends Phaser.Scene {
             }
         }
 
-        // --- Row 3 & 4 (보스 아이콘: 각 160px 너비) ---
-        for (let r = 2; r < 4; r++) {
-            for (let i = 0; i < 4; i++) {
-                tex.add(`row${r}_${i}`, 0, i * 160, r * rowH, 160, rowH);
-            }
+        // --- Row 3 (보스 1단계: index 0~2, 각 160px 너비) ---
+        // row2_0, row2_1, row2_2 (총 3개; row2_3 미사용)
+        for (let i = 0; i < 3; i++) {
+            tex.add(`row2_${i}`, 0, i * 160, 2 * rowH, 160, rowH);
+        }
+
+        // --- Row 4 (보스 2단계: index 0~3, 각 160px 너비) ---
+        // row3_0, row3_1 = 일반 보스 / row3_3 = 최종 보스 (맵에서 제외)
+        for (let i = 0; i < 4; i++) {
+            tex.add(`row3_${i}`, 0, i * 160, 3 * rowH, 160, rowH);
         }
 
         // --- Row 5 (위치 핀: 각 106.66 너비) ---
         for (let i = 0; i < 3; i++) {
             tex.add(`row4_${i}`, 0, i * (640/6), 4 * rowH, 640/6, rowH);
+        }
+      }
+    });
+
+    // 카드 스프라이트 프레임 분할
+    // card-sprite.png: 6행 × 5열, 각 프레임 370 × 370px
+    this.load.once('filecomplete-image-card_sprites', () => {
+      const cardTex = this.textures.get('card_sprites');
+      if (cardTex && cardTex.key !== '__DEFAULT') {
+        const fw = 370;
+        const fh = 370;
+        for (let row = 0; row < 6; row++) {
+          for (let col = 0; col < 5; col++) {
+            cardTex.add(`card_${row}_${col}`, 0, col * fw, row * fh, fw, fh);
+          }
+        }
+      }
+    });
+
+    // 속성 아이콘 프레임 분할
+    // attr-sprite.png: 7개 아이콘 (물/불/풀/번개/돌/일반/별), 각 128 × 128px
+    this.load.once('filecomplete-image-attr_icons', () => {
+      const attrTex = this.textures.get('attr_icons');
+      if (attrTex && attrTex.key !== '__DEFAULT') {
+        const iconSize = 128;
+        for (let i = 0; i < 7; i++) {
+          attrTex.add(`attr_${i}`, 0, i * iconSize, 0, iconSize, iconSize);
         }
       }
     });
@@ -101,6 +138,10 @@ export default class PreloadScene extends Phaser.Scene {
     // 맵 이미지 로드
     this.load.image('map_bg', mapBg);
     this.load.image('map_nodes', mapNodes);
+
+    // 카드 이미지 로드
+    this.load.image('card_sprites', cardSprite);
+    this.load.image('attr_icons', attrSprite);
   }
 
   create() {

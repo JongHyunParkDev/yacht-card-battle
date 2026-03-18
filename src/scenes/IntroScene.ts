@@ -136,7 +136,12 @@ export default class IntroScene extends Phaser.Scene {
         this.scene.start('MainScene', { isContinue: true });
       }, hasSaveFile);
 
-      // 3. 설정
+      // 3. 카드 도감
+      createButton('📖 카드 도감', () => {
+        this.scene.start('CardGalleryScene');
+      });
+
+      // 4. 설정
       createButton(i18n.t('settings'), () => {
         this.scene.start('SettingsScene');
       });
