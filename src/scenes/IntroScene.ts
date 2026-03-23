@@ -16,6 +16,8 @@ export default class IntroScene extends Phaser.Scene {
     // 1. 가장 뒷 배경 (공통 유틸 사용)
     addFullscreenBackground(this, 'bg1');
 
+    this.cameras.main.fadeIn(250, 0, 0, 0);
+
     // Electron에서 설정 불러와서 언어 적용
     // @ts-ignore
     if (typeof require !== 'undefined') {
@@ -49,6 +51,14 @@ export default class IntroScene extends Phaser.Scene {
     // 버튼들을 담을 배열
     const buttons: Phaser.GameObjects.Text[] = [];
 
+    // 씬 전환 헬퍼 (fadeOut 후 전환)
+    const goScene = (key: string, data?: object) => {
+      this.cameras.main.fadeOut(200, 0, 0, 0);
+      this.cameras.main.once('camerafadeoutcomplete', () => {
+        this.scene.start(key, data);
+      });
+    };
+
     // 레이아웃 업데이트 함수 (리사이즈 시 호출)
     const updateLayout = () => {
       const { width, height } = this.scale;
@@ -65,8 +75,11 @@ export default class IntroScene extends Phaser.Scene {
       title.setY(height / 2 - 150);
 
       // 버튼들 위치 조정
+      const spacing = buttons.length > 0
+        ? Math.min(80, (height * 0.45) / buttons.length)
+        : 80;
       buttons.forEach((btn, index) => {
-        btn.setPosition(100, height / 2 + (index * 80));
+        btn.setPosition(100, height / 2 + (index * spacing));
       });
     };
 
@@ -123,27 +136,27 @@ export default class IntroScene extends Phaser.Scene {
           // 기존 세이브 파일이 있을 경우 팝업으로 사용자 의사 확인
           const isConfirmed = confirm(i18n.t('newGameConfirm'));
           if (isConfirmed) {
-            this.scene.start('CharacterSelectScene');
+            goScene('CharacterSelectScene');
           }
         } else {
           // 세이브 파일이 없으면 바로 캐릭터 선택으로
-          this.scene.start('CharacterSelectScene');
+          goScene('CharacterSelectScene');
         }
       });
 
       // 2. 이어하기 (조건부 활성화)
       createButton(i18n.t('continue'), () => {
-        this.scene.start('MainScene', { isContinue: true });
+        goScene('MainScene', { isContinue: true });
       }, hasSaveFile);
 
       // 3. 카드 도감
       createButton('📖 카드 도감', () => {
-        this.scene.start('CardGalleryScene');
+        goScene('CardGalleryScene');
       });
 
       // 4. 설정
       createButton(i18n.t('settings'), () => {
-        this.scene.start('SettingsScene');
+        goScene('SettingsScene');
       });
 
       // 4. 게임 종료

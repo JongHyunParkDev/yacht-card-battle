@@ -170,13 +170,17 @@ export default class Card extends Phaser.GameObjects.Container {
 
   /** 중앙 일러스트 */
   private drawIllustration() {
+    const targetW = CARD_WIDTH - PAD * 2 - 2;
+    const targetH = ILLUST_H - 2;
+    const size = Math.min(targetW, targetH);
+    
     const illust = this.scene.add.image(
       CARD_WIDTH / 2,
       ILLUST_Y + ILLUST_H / 2,
       'card_sprites',
     );
     illust.setFrame(`card_${this.cardInfo.spriteRow}_${this.cardInfo.spriteCol}`);
-    illust.setDisplaySize(CARD_WIDTH - PAD * 2 - 2, ILLUST_H - 2);
+    illust.setDisplaySize(size, size);
     this.add(illust);
   }
 

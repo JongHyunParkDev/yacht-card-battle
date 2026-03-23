@@ -59,6 +59,10 @@ export default class CardGalleryScene extends Phaser.Scene {
   private scrollThumb!:   Phaser.GameObjects.Graphics;
   private detailPopup:    Phaser.GameObjects.Container | null = null;
 
+  private tabBg!: Phaser.GameObjects.Graphics;
+  private tabTextObjs: Phaser.GameObjects.Text[] = [];
+  private maskGfx!: Phaser.GameObjects.Graphics;
+
   constructor() {
     super('CardGalleryScene');
   }
@@ -102,24 +106,64 @@ export default class CardGalleryScene extends Phaser.Scene {
     const totalW = tabW * TABS.length;
     const startX = (w - totalW) / 2;
 
-    const tabBg = this.add.graphics();
+    this.tabBg = this.add.graphics();
+    this.tabTextObjs = [];
 
     TABS.forEach((tab, idx) => {
       const tx       = startX + idx * tabW + tabW / 2;
       const isActive = tab.element === this.activeTab;
 
-      tabBg.fillStyle(isActive ? GOLD : 0x2a2520, 1);
-      tabBg.fillRoundedRect(startX + idx * tabW + 2, tabY - 14, tabW - 4, 28, 5);
+      this.tabBg.fillStyle(isActive ? GOLD : 0x2a2520, 1);
+      this.tabBg.fillRoundedRect(startX + idx * tabW + 2, tabY - 14, tabW - 4, 28, 5);
 
       const btn = this.add.text(tx, tabY, tab.label, {
         fontFamily: 'SBAggroM', fontSize: '11px',
         color: isActive ? '#000000' : DIM_HEX,
       }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
-      btn.on('pointerdown', () => { this.activeTab = tab.element; this.scrollY = 0; this.scene.restart(); });
+      btn.on('pointerdown', () => {
+        if (tab.element === this.activeTab) return;
+        this.activeTab = tab.element;
+        this.scrollY = 0;
+        this.refreshTabs(w);
+        this.rebuildCards(w, this.scale.height);
+      });
       btn.on('pointerover', () => { if (tab.element !== this.activeTab) btn.setColor(WHITE_HEX); });
       btn.on('pointerout',  () => { if (tab.element !== this.activeTab) btn.setColor(DIM_HEX); });
+
+      this.tabTextObjs.push(btn);
     });
+  }
+
+  /** 탭 배경만 다시 그리기 */
+  private refreshTabs(w: number) {
+    const tabY   = 82;
+    const tabW   = Math.min(108, (w - 40) / TABS.length);
+    const totalW = tabW * TABS.length;
+    const startX = (w - totalW) / 2;
+
+    this.tabBg.clear();
+
+    TABS.forEach((tab, idx) => {
+      const isActive = tab.element === this.activeTab;
+
+      this.tabBg.fillStyle(isActive ? GOLD : 0x2a2520, 1);
+      this.tabBg.fillRoundedRect(startX + idx * tabW + 2, tabY - 14, tabW - 4, 28, 5);
+
+      const btn = this.tabTextObjs[idx];
+      if (btn) {
+        btn.setColor(isActive ? '#000000' : DIM_HEX);
+      }
+    });
+  }
+
+  /** 카드 영역만 재구성 */
+  private rebuildCards(w: number, h: number) {
+    this.cardContainer?.destroy();
+    this.maskGfx?.destroy();
+    this.scrollThumb?.destroy();
+    this.buildCards(w, h);
+    this.drawScrollbar(w, h);
   }
 
   /** 카드 그리드 생성 – 카드 좌표는 top-left 기준 */
@@ -152,11 +196,11 @@ export default class CardGalleryScene extends Phaser.Scene {
       this.cardContainer.add(card);
     });
 
-    // 카드 영역 클리핑 마스크
-    const maskGfx = this.make.graphics({ add: false });
-    maskGfx.fillStyle(0xffffff, 1);
-    maskGfx.fillRect(0, CARD_AREA_TOP, w, visibleH);
-    this.cardContainer.setMask(maskGfx.createGeometryMask());
+    // 카드 영역 클리핑 마스크 (setVisible(false)로 화면에 노출 안 됨)
+    this.maskGfx = this.add.graphics().setVisible(false);
+    this.maskGfx.fillStyle(0xffffff, 1);
+    this.maskGfx.fillRect(0, CARD_AREA_TOP, w, visibleH);
+    this.cardContainer.setMask(this.maskGfx.createGeometryMask());
   }
 
   private drawBackButton(w: number, h: number) {

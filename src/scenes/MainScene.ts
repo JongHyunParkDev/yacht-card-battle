@@ -384,7 +384,12 @@ export default class MainScene extends Phaser.Scene {
   // ─────────────────────────────────────────────────────────────────────────────
 
   private togglePauseMenu(width: number, height: number) {
-    if (this.isPaused || this.isMoving) return;
+    if (this.isMoving) return;
+    if (this.isPaused) {
+      this.isPaused = false;
+      this.pauseMenuContainer?.destroy();
+      return;
+    }
     this.isPaused = true;
 
     const cam = this.cameras.main;

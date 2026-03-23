@@ -106,6 +106,7 @@ export default class CharacterSelectScene extends Phaser.Scene {
     const { width, height } = this.scale;
 
     this.buildBackground(width, height);
+    this.cameras.main.fadeIn(250, 0, 0, 0);
     this.buildTitle(width, height);
 
     const layout = this.calcLayout(width, height);
@@ -296,7 +297,10 @@ export default class CharacterSelectScene extends Phaser.Scene {
     this.startBtn.on('pointerout',   () => this.startBtn.setBackgroundColor('#d4af37'));
     this.startBtn.on('pointerdown',  () => {
       const char = CHARACTERS[this.selectedIndex];
-      this.scene.start('MainScene', { isContinue: false, character: char });
+      this.cameras.main.fadeOut(200, 0, 0, 0);
+      this.cameras.main.once('camerafadeoutcomplete', () => {
+        this.scene.start('MainScene', { isContinue: false, character: char });
+      });
     });
 
     // 뒤로가기
@@ -308,7 +312,12 @@ export default class CharacterSelectScene extends Phaser.Scene {
 
     backBtn.on('pointerover', () => backBtn.setColor('#d4af37'));
     backBtn.on('pointerout',  () => backBtn.setColor('#8a7060'));
-    backBtn.on('pointerdown', () => this.scene.start('IntroScene'));
+    backBtn.on('pointerdown', () => {
+      this.cameras.main.fadeOut(200, 0, 0, 0);
+      this.cameras.main.once('camerafadeoutcomplete', () => {
+        this.scene.start('IntroScene');
+      });
+    });
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
