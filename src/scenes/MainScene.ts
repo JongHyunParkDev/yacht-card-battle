@@ -46,9 +46,6 @@ export default class MainScene extends Phaser.Scene {
   private isMoving   = false;
   private currentNodeId = -1;
 
-  // 덱 패널 Y 오프셋 (0 = 완전 닫힘, -panelH = 완전 열림)
-  private deckPanelOffsetY = 0;
-
   // ── 게임 오브젝트 참조 ────────────────────────────────────────────────────────
   private playerToken!: Phaser.GameObjects.Sprite;
   private pauseMenuContainer!: Phaser.GameObjects.Container;
@@ -88,29 +85,21 @@ export default class MainScene extends Phaser.Scene {
 
     this.createPlayerToken(startNode);
     this.setupInput(width, height);
+
+    // 덱 패널 생성 전 월드 오브젝트 목록 스냅샷
+    const worldObjects = [...this.children.list];
     this.createDeckWindow(width, height);
+
+    // UI 카메라: zoom=1, scroll=0 → 스크린 좌표 = 월드 좌표 (완전 고정)
+    const uiCam = this.cameras.add(0, 0, width, height).setZoom(1);
+    uiCam.ignore(worldObjects);
+    this.cameras.main.ignore(this.deckWindowContainer);
 
     // 노드 클릭 이벤트 등록 (allNodes, nodeSpritesMap 클로저로 사용)
     this.registerNodeClickEvents(allNodes, nodeSpritesMap);
   }
 
-  /** 매 프레임: 덱 패널을 카메라 위치에 동기화 */
-  update() {
-    if (!this.deckWindowContainer || !this.cameras.main) return;
-
-    const cam   = this.cameras.main;
-    const zoom  = cam.zoom;
-    const { width, height } = this.scale;
-
-    const viewW       = width / zoom;
-    const worldLeft   = cam.midPoint.x - viewW / 2;
-    const worldBottom = cam.midPoint.y + (height / 2) / zoom;
-
-    this.deckWindowContainer.setPosition(
-      worldLeft,
-      worldBottom + this.deckPanelOffsetY - DECK_PANEL_HANDLE_H,
-    );
-  }
+  update() { /* 덱 패널은 UI 카메라로 고정 — 매 프레임 positioning 불필요 */ }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // create() 초기화 세부 메서드
@@ -262,7 +251,7 @@ export default class MainScene extends Phaser.Scene {
     this.playerToken.setScale(TOKEN_SCALE_IDLE);
     this.playerToken.setOrigin(0.5, 0.5);
     this.playerToken.setDepth(10);
-    this.cameras.main.startFollow(this.playerToken, true, 0.05, 0.05);
+    this.cameras.main.startFollow(this.playerToken, true, 0.1, 0.1);
   }
 
   private setupInput(width: number, height: number) {
@@ -276,13 +265,14 @@ export default class MainScene extends Phaser.Scene {
   // ─────────────────────────────────────────────────────────────────────────────
 
   private createDeckWindow(width: number, height: number) {
-    const zoom    = this.cameras.main.zoom;
-    const panelW  = Math.round(width  / zoom);
-    const panelH  = Math.round(height / zoom) - DECK_PANEL_HANDLE_H;
+    // UI 카메라(zoom=1)로 렌더링 → 스크린 좌표 그대로 사용, zoom 보정 불필요
+    const panelW  = width;
+    const panelH  = height - DECK_PANEL_HANDLE_H;
     const handleX = (panelW - DECK_PANEL_HANDLE_W) / 2;
     const handleY = 0;
 
-    this.deckWindowContainer = this.add.container(0, 0);
+    // 초기 위치: 화면 하단 (핸들만 노출된 닫힌 상태)
+    this.deckWindowContainer = this.add.container(0, height - DECK_PANEL_HANDLE_H);
     this.deckWindowContainer.setDepth(50);
 
     // 핸들 배경
@@ -347,23 +337,19 @@ export default class MainScene extends Phaser.Scene {
       rightTitle, rightContent,
     ]);
 
-    // 패널 토글 애니메이션
-    let isPanelOpen  = false;
-    const openOffset = -panelH;
+    // 패널 토글 애니메이션 — container.y를 스크린 좌표로 직접 트윈
+    let isPanelOpen = false;
+    const closedY   = height - DECK_PANEL_HANDLE_H;
+    const openY     = 0;
 
     const togglePanel = (toOpen: boolean) => {
       isPanelOpen = toOpen;
       handleText.setText(`${deckText} ${isPanelOpen ? '▼' : '▲'}`);
-      const from = this.deckPanelOffsetY;
-      const to   = isPanelOpen ? openOffset : 0;
-
-      this.tweens.addCounter({
-        from, to,
+      this.tweens.add({
+        targets: this.deckWindowContainer,
+        y: isPanelOpen ? openY : closedY,
         duration: 350,
         ease: 'Cubic.easeOut',
-        onUpdate: tween => {
-          this.deckPanelOffsetY = tween.getValue() ?? this.deckPanelOffsetY;
-        },
       });
     };
 
@@ -495,27 +481,47 @@ export default class MainScene extends Phaser.Scene {
     this.isMoving = true;
     this.tweens.killTweensOf(this.playerToken);
 
-    const midX = (this.playerToken.x + targetX) / 2;
-    const midY = (this.playerToken.y + targetY) / 2 - 50;
+    const cam    = this.cameras.main;
+    const liftMs = 280;
+    const dropMs = 340;
+    const midX   = (this.playerToken.x + targetX) / 2;
+    const midY   = (this.playerToken.y + targetY) / 2 - 45; // 호(arc) 정점
 
-    // 들어올리기
+    cam.startFollow(this.playerToken, true, 0.12, 0.12);
+
+    // 1단계: 들어올리기 — 포물선 정점으로 부드럽게 상승
     this.tweens.add({
       targets: this.playerToken,
       x: midX, y: midY,
       scaleX: TOKEN_SCALE_LIFT, scaleY: TOKEN_SCALE_LIFT,
-      angle: 15,
-      duration: 250,
+      duration: liftMs,
       ease: 'Sine.easeOut',
       onComplete: () => {
-        // 내려놓기
+
+        // 2단계: 내려놓기 — 중력감 있게 목적지로 낙하
         this.tweens.add({
           targets: this.playerToken,
           x: targetX, y: targetY,
           scaleX: TOKEN_SCALE_IDLE, scaleY: TOKEN_SCALE_IDLE,
-          angle: 0,
-          duration: 500,
-          ease: 'Bounce.easeOut',
-          onComplete: () => { this.isMoving = false; },
+          duration: dropMs,
+          ease: 'Quad.easeIn',
+          onComplete: () => {
+
+            // 3단계: 착지 squash — 납작해졌다가 원복
+            this.tweens.add({
+              targets: this.playerToken,
+              scaleX: TOKEN_SCALE_IDLE * 1.35,
+              scaleY: TOKEN_SCALE_IDLE * 0.72,
+              duration: 75,
+              ease: 'Sine.easeOut',
+              yoyo: true,
+              onComplete: () => {
+                this.playerToken.setScale(TOKEN_SCALE_IDLE);
+                cam.startFollow(this.playerToken, true, 0.1, 0.1);
+                this.isMoving = false;
+              },
+            });
+          },
         });
       },
     });
