@@ -3,6 +3,12 @@ import Phaser from 'phaser';
 import bg1 from '@src/assets/img/background/background_1.png';
 import bg2 from '@src/assets/img/background/background_2.png';
 
+import charBowIdle    from '@src/assets/img/char/bow-idle.png';
+import charHammerIdle from '@src/assets/img/char/hammer-idle.png';
+import charShieldIdle from '@src/assets/img/char/shield-idle.png';
+import charSpearIdle  from '@src/assets/img/char/spear-idle.png';
+import charSwordIdle  from '@src/assets/img/char/sword-idle.png';
+
 // Import map assets
 import mapBg from '@src/assets/img/map/map_bg.png';
 // map_nodes.png: 스프라이트 이미지
@@ -130,6 +136,13 @@ export default class PreloadScene extends Phaser.Scene {
         }
       }
     });
+
+    // 캐릭터 idle 스프라이트시트 로드 (300×400px / 프레임)
+    this.load.spritesheet('char_bow',    charBowIdle,    { frameWidth: 300, frameHeight: 400 });
+    this.load.spritesheet('char_hammer', charHammerIdle, { frameWidth: 300, frameHeight: 400 });
+    this.load.spritesheet('char_shield', charShieldIdle, { frameWidth: 300, frameHeight: 400 });
+    this.load.spritesheet('char_spear',  charSpearIdle,  { frameWidth: 300, frameHeight: 400 });
+    this.load.spritesheet('char_sword',  charSwordIdle,  { frameWidth: 300, frameHeight: 400 });
 
     // 백그라운드 이미지 로드
     this.load.image('bg1', bg1);

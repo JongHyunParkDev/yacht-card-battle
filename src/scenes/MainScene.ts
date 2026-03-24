@@ -378,10 +378,10 @@ export default class MainScene extends Phaser.Scene {
     }
     this.isPaused = true;
 
-    const cam = this.cameras.main;
-    // setScrollFactor(0)는 zoom 상태에서 Hit Area 왜곡 버그를 유발하므로 사용하지 않습니다.
-    this.pauseMenuContainer = this.add.container(cam.midPoint.x, cam.midPoint.y);
+    // uiCam(zoom=1, 고정) 기준 화면 중앙에 배치하고, cameras.main은 렌더링에서 제외
+    this.pauseMenuContainer = this.add.container(width / 2, height / 2);
     this.pauseMenuContainer.setDepth(100);
+    this.cameras.main.ignore(this.pauseMenuContainer);
 
     // 딤 배경 (넉넉하게 화면 전체 덮기)
     const bgW     = width * 3;

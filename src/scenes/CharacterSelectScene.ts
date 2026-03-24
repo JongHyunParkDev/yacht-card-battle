@@ -16,13 +16,22 @@ const WEAPON_COLORS: Record<WeaponType, { card: number; accent: string }> = {
   spear:       { card: 0x8e44ad, accent: '#b57bee' }, // 보라
 };
 
-/** 무기 이모지 */
-const WEAPON_EMOJI: Record<WeaponType, string> = {
-  swordShield: '⚔️🛡️',
-  bow:         '🏹',
-  greatsword:  '🗡️',
-  hammer:      '🔨',
-  spear:       '🔱',
+/** 무기 타입 → 캐릭터 idle 스프라이트 키 */
+const CHAR_SPRITE_KEY: Record<WeaponType, string> = {
+  swordShield: 'char_shield',
+  bow:         'char_bow',
+  greatsword:  'char_sword',
+  hammer:      'char_hammer',
+  spear:       'char_spear',
+};
+
+/** 무기 타입 → idle 프레임 수 */
+const CHAR_FRAME_COUNT: Record<WeaponType, number> = {
+  swordShield: 6,
+  bow:         5,
+  greatsword:  7,
+  hammer:      7,
+  spear:       5,
 };
 
 export interface CharacterDef {
@@ -108,6 +117,7 @@ export default class CharacterSelectScene extends Phaser.Scene {
     this.buildBackground(width, height);
     this.cameras.main.fadeIn(250, 0, 0, 0);
     this.buildTitle(width, height);
+    this.createCharAnimations();
 
     const layout = this.calcLayout(width, height);
     this.buildCharacterCards(layout);
@@ -143,6 +153,22 @@ export default class CharacterSelectScene extends Phaser.Scene {
   // ─────────────────────────────────────────────────────────────────────────────
   // UI 빌더
   // ─────────────────────────────────────────────────────────────────────────────
+
+  private createCharAnimations() {
+    CHARACTERS.forEach((char) => {
+      const key      = `char_idle_${char.weapon}`;
+      const frames   = CHAR_FRAME_COUNT[char.weapon];
+      const texKey   = CHAR_SPRITE_KEY[char.weapon];
+      if (!this.anims.exists(key)) {
+        this.anims.create({
+          key,
+          frames:    this.anims.generateFrameNumbers(texKey, { start: 0, end: frames - 1 }),
+          frameRate: 8,
+          repeat:    -1,
+        });
+      }
+    });
+  }
 
   private buildBackground(width: number, height: number) {
     const bg = this.add.graphics();
@@ -186,13 +212,14 @@ export default class CharacterSelectScene extends Phaser.Scene {
       this.drawCardBg(cardBg, cardW, cardH, char.weapon, false);
       this.cardGraphics.push(cardBg);
 
-      // 무기 이모지
-      const emoji = this.add.text(0, -cardH * 0.25, WEAPON_EMOJI[char.weapon], {
-        fontSize: `${Math.round(cardW * 0.36)}px`,
-      }).setOrigin(0.5);
+      // 캐릭터 idle 스프라이트
+      const spriteScale = Math.min(cardW * 0.9 / 300, cardH * 0.55 / 400);
+      const charSprite  = this.add.sprite(0, -cardH * 0.18, CHAR_SPRITE_KEY[char.weapon])
+        .setScale(spriteScale)
+        .play(`char_idle_${char.weapon}`);
 
       // 무기 이름
-      const weaponName = this.add.text(0, cardH * 0.06, i18n.t(char.nameKey), {
+      const weaponName = this.add.text(0, cardH * 0.22, i18n.t(char.nameKey), {
         fontFamily: 'SBAggroB',
         fontSize: `${Math.round(cardW * 0.14)}px`,
         color: WEAPON_COLORS[char.weapon].accent,
@@ -201,7 +228,7 @@ export default class CharacterSelectScene extends Phaser.Scene {
       }).setOrigin(0.5);
 
       // 간략 스탯
-      const statSummary = this.add.text(0, cardH * 0.27,
+      const statSummary = this.add.text(0, cardH * 0.38,
         `HP ${char.hp}  ATK ${char.atk}`,
         {
           fontFamily: 'SBAggroM',
@@ -210,7 +237,7 @@ export default class CharacterSelectScene extends Phaser.Scene {
         }
       ).setOrigin(0.5);
 
-      container.add([cardBg, emoji, weaponName, statSummary]);
+      container.add([cardBg, charSprite, weaponName, statSummary]);
       container.setSize(cardW, cardH);
       container.setInteractive({ useHandCursor: true });
 
