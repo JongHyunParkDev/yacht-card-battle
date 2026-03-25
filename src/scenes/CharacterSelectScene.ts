@@ -40,10 +40,10 @@ export interface CharacterDef {
   nameKey:     string;     // i18n 키
   hp:          number;
   atk:         number;
-  def:         number;     // 방력 (0~50)
+  def:         number;     // 방어력 (0~50)
   crit:        number;     // 크리티컬 % (0~100)
   critDmg:     number;     // 크리티컬 배율 (기본 1.5)
-  description: string;
+  descKey:     string;     // 고유 특성 설명 i18n 키
 }
 
 /** 무기 타입별 캐릭터 정의 */
@@ -52,41 +52,41 @@ const CHARACTERS: CharacterDef[] = [
     id: 'guardian',
     weapon: 'swordShield',
     nameKey: 'weaponSwordShield',
-    hp: 140, atk: 12, def: 18, crit: 8, critDmg: 1.5,
-    description: '공격과 방어를 겸비한 수호자.\n높은 방어력으로 생존에 유리합니다.',
+    hp: 100, atk: 10, def: 10, crit: 10, critDmg: 1.5,
+    descKey: 'descGuardian',
   },
   {
     id: 'ranger',
     weapon: 'bow',
     nameKey: 'weaponBow',
-    hp: 100, atk: 16, def: 6, crit: 22, critDmg: 2.0,
-    description: '원거리에서 정밀하게 공격하는 레인저.\n크리티컬 확률이 높습니다.',
+    hp: 60, atk: 10, def: 0, crit: 20, critDmg: 1.5,
+    descKey: 'descRanger',
   },
   {
     id: 'berserker',
     weapon: 'greatsword',
     nameKey: 'weaponGreatsword',
-    hp: 110, atk: 22, def: 4, crit: 12, critDmg: 1.8,
-    description: '두손으로 휘두르는 파괴적인 버서커.\n최강의 공격력을 자랑합니다.',
+    hp: 80, atk: 10, def: 10, crit: 10, critDmg: 1.5,
+    descKey: 'descBerserker',
   },
   {
     id: 'titan',
     weapon: 'hammer',
     nameKey: 'weaponHammer',
-    hp: 160, atk: 14, def: 24, crit: 5, critDmg: 1.5,
-    description: '망치로 모든 것을 부수는 타이탄.\n체력과 방어력이 압도적입니다.',
+    hp: 100, atk: 10, def: 0, crit: 10, critDmg: 1.5,
+    descKey: 'descTitan',
   },
   {
     id: 'lancer',
     weapon: 'spear',
     nameKey: 'weaponSpear',
-    hp: 120, atk: 18, def: 10, crit: 16, critDmg: 1.7,
-    description: '창으로 거리를 지배하는 랜서.\n공격·방어· 크리티컬이 균형잡혀 있습니다.',
+    hp: 80, atk: 10, def: 0, crit: 10, critDmg: 1.5,
+    descKey: 'descLancer',
   },
 ];
 
 // 스탯 최대 기준값 (바 정규화용)
-const STAT_MAX = { hp: 160, atk: 22, def: 24, crit: 100 };
+const STAT_MAX = { hp: 200, def: 50, atk: 100, crit: 100, critDmg: 2.5 };
 
 // ─── 씬 ───────────────────────────────────────────────────────────────────────
 
@@ -138,16 +138,17 @@ export default class CharacterSelectScene extends Phaser.Scene {
 
   private calcLayout(width: number, height: number) {
     const count   = CHARACTERS.length;
-    const cardW   = Math.min((width - 80) / count - 12, 150);
-    const cardH   = cardW * 1.65;
-    const totalW  = count * (cardW + 12) - 12;
+    const cardW   = Math.min((width - 80) / count - 10, 175);
+    const cardH   = cardW * 1.85;
+    const totalW  = count * (cardW + 10) - 10;
     const startX  = (width - totalW) / 2;
-    const cardY   = 110 + cardH / 2;
-    const panelY  = cardY + cardH / 2 + 20;
-    const panelH  = height - panelY - 80;
-    const panelW  = Math.min(width - 80, 720);
-    const panelX  = (width - panelW) / 2;
-    return { count, cardW, cardH, startX, cardY, panelX, panelY, panelW, panelH };
+    const cardY   = 108 + cardH / 2;
+    const panelY  = cardY + cardH / 2 + 14;
+    const panelH  = Math.min(height - panelY - 68, 210);
+    // 패널 너비 = 카드 5장 전체 너비에 맞춤
+    const panelW  = totalW;
+    const panelX  = startX;
+    return { count, cardW, cardH, totalW, startX, cardY, panelX, panelY, panelW, panelH };
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -204,7 +205,7 @@ export default class CharacterSelectScene extends Phaser.Scene {
     this.cardGraphics   = [];
 
     CHARACTERS.forEach((char, idx) => {
-      const x = startX + idx * (cardW + 12) + cardW / 2;
+      const x = startX + idx * (cardW + 10) + cardW / 2;
       const container = this.add.container(x, cardY);
 
       // 카드 배경 Graphics
@@ -212,32 +213,22 @@ export default class CharacterSelectScene extends Phaser.Scene {
       this.drawCardBg(cardBg, cardW, cardH, char.weapon, false);
       this.cardGraphics.push(cardBg);
 
-      // 캐릭터 idle 스프라이트
-      const spriteScale = Math.min(cardW * 0.9 / 300, cardH * 0.55 / 400);
-      const charSprite  = this.add.sprite(0, -cardH * 0.18, CHAR_SPRITE_KEY[char.weapon])
+      // 캐릭터 idle 스프라이트 (크게)
+      const spriteScale = Math.min(cardW / 260, cardH * 0.68 / 360);
+      const charSprite  = this.add.sprite(0, -cardH * 0.10, CHAR_SPRITE_KEY[char.weapon])
         .setScale(spriteScale)
         .play(`char_idle_${char.weapon}`);
 
-      // 무기 이름
-      const weaponName = this.add.text(0, cardH * 0.22, i18n.t(char.nameKey), {
+      // 무기 이름만 표시 (스펙은 클릭 시 하단 패널에서 확인)
+      const weaponName = this.add.text(0, cardH * 0.41, i18n.t(char.nameKey), {
         fontFamily: 'SBAggroB',
-        fontSize: `${Math.round(cardW * 0.14)}px`,
+        fontSize: `${Math.round(cardW * 0.13)}px`,
         color: WEAPON_COLORS[char.weapon].accent,
         stroke: '#000',
         strokeThickness: 3,
       }).setOrigin(0.5);
 
-      // 간략 스탯
-      const statSummary = this.add.text(0, cardH * 0.38,
-        `HP ${char.hp}  ATK ${char.atk}`,
-        {
-          fontFamily: 'SBAggroM',
-          fontSize: `${Math.round(cardW * 0.10)}px`,
-          color: '#b8a080',
-        }
-      ).setOrigin(0.5);
-
-      container.add([cardBg, charSprite, weaponName, statSummary]);
+      container.add([cardBg, charSprite, weaponName]);
       container.setSize(cardW, cardH);
       container.setInteractive({ useHandCursor: true });
 
@@ -269,45 +260,46 @@ export default class CharacterSelectScene extends Phaser.Scene {
     bg.fillRoundedRect(0, 0, panelW, panelH, 10);
     bg.strokeRoundedRect(0, 0, panelW, panelH, 10);
 
-    // 이름 (큰 텍스트)
-    const nameText = this.add.text(panelW / 2, panelH * 0.14, '', {
+    // ── 좌측: 이름 + 특성 설명 ─────────────────────────────────────────────────
+    const leftCx = panelW * 0.19;
+
+    const nameText = this.add.text(leftCx, panelH * 0.24, '', {
       fontFamily: 'SBAggroB',
-      fontSize: '26px',
+      fontSize: '24px',
       color: '#ffffff',
     }).setOrigin(0.5).setName('nameText');
 
-    // 설명
-    const descText = this.add.text(panelW / 2, panelH * 0.34, '', {
+    const descText = this.add.text(leftCx, panelH * 0.62, '', {
       fontFamily: 'SBAggroM',
-      fontSize: '14px',
+      fontSize: '13px',
       color: '#b8a880',
       align: 'center',
-      lineSpacing: 6,
+      lineSpacing: 4,
+      wordWrap: { width: panelW * 0.34 },
     }).setOrigin(0.5).setName('descText');
 
-    // 스탯 바 렌더링용 Graphics
+    // 세로 구분선
+    const divider = this.add.graphics();
+    divider.lineStyle(1, 0xd4af37, 0.2);
+    divider.lineBetween(panelW * 0.38, panelH * 0.08, panelW * 0.38, panelH * 0.92);
+
+    // ── 우측: 스탯 바 ───────────────────────────────────────────────────────────
     const statG = this.add.graphics().setName('statG');
 
-    // 스탯 레이블 (고정)
-    const statLabelDefs = [
-      { key: 'HP',    label: `HP` },
-      { key: 'ATK',   label: `ATK` },
-      { key: 'DEF',   label: `DEF` },
-      { key: 'CRIT',  label: `CRIT` },
-    ];
-    const barStartY = panelH * 0.56;
-    const rowGap    = panelH * 0.115;
-    const labelX    = panelW * 0.06;
+    const statLabelDefs = ['statHp', 'statDef', 'statAtk', 'statCrit', 'statCritDmg'].map(k => i18n.t(k));
+    const barStartY = panelH * 0.12;
+    const rowGap    = panelH * 0.165;
+    const labelX    = panelW * 0.41;
 
-    const labelTexts = statLabelDefs.map(({ label }, i) =>
+    const labelTexts = statLabelDefs.map((label, i) =>
       this.add.text(labelX, barStartY + i * rowGap, label, {
         fontFamily: 'SBAggroB',
-        fontSize: '13px',
+        fontSize: '12px',
         color: '#d4af37',
       }).setOrigin(0, 0.5)
     );
 
-    this.detailPanel.add([bg, nameText, descText, statG, ...labelTexts]);
+    this.detailPanel.add([bg, nameText, descText, divider, statG, ...labelTexts]);
   }
 
   private buildButtons(width: number, height: number) {
@@ -363,12 +355,12 @@ export default class CharacterSelectScene extends Phaser.Scene {
       this.tweens.add({ targets: this.cardContainers[prev], y: cardY, scaleX: 1, scaleY: 1, duration: 160 });
     }
 
-    // 현재 카드 강조
+    // 현재 카드 강조 (중심에서 사방으로 확대)
     this.drawCardBg(this.cardGraphics[idx], cardW, cardH, CHARACTERS[idx].weapon, true);
     this.tweens.add({
       targets: this.cardContainers[idx],
-      y: cardY - 14,
-      scaleX: 1.06, scaleY: 1.06,
+      y: cardY,
+      scaleX: 1.08, scaleY: 1.08,
       duration: 200,
       ease: 'Back.easeOut',
     });
@@ -384,38 +376,37 @@ export default class CharacterSelectScene extends Phaser.Scene {
     nameText?.setText(i18n.t(char.nameKey))
              .setColor(WEAPON_COLORS[char.weapon].accent);
 
-    // 설명
+    // 고유 특성
     const descText = this.detailPanel.getByName('descText') as Phaser.GameObjects.Text;
-    descText?.setText(char.description);
+    descText?.setText(i18n.t(char.descKey));
 
     // 스탯 바
     const statG = this.detailPanel.getByName('statG') as Phaser.GameObjects.Graphics;
     if (!statG) return;
     statG.clear();
 
-    const barX      = panelW * 0.20;
-    const barEndX   = panelW * 0.78;
+    const barX      = panelW * 0.51;
+    const barEndX   = panelW * 0.87;
     const barW      = barEndX - barX;
-    const barH      = 13;
-    const barStartY = panelH * 0.56;
-    const rowGap    = panelH * 0.115;
+    const barH      = 11;
+    const barStartY = panelH * 0.12;
+    const rowGap    = panelH * 0.165;
     const col       = WEAPON_COLORS[char.weapon].card;
 
     const statValues = [
-      { val: char.hp,   max: STAT_MAX.hp   },
-      { val: char.atk,  max: STAT_MAX.atk  },
-      { val: char.def,  max: STAT_MAX.def  },
-      { val: char.crit, max: STAT_MAX.crit },
+      { val: char.hp,      max: STAT_MAX.hp      },
+      { val: char.def,     max: STAT_MAX.def      },
+      { val: char.atk,     max: STAT_MAX.atk      },
+      { val: char.crit,    max: STAT_MAX.crit     },
+      { val: char.critDmg, max: STAT_MAX.critDmg  },
     ];
 
     statValues.forEach(({ val, max }, i) => {
       const y     = barStartY + i * rowGap - barH / 2;
       const ratio = Math.min(val / max, 1);
 
-      // 배경
       statG.fillStyle(0x2a2a3a, 1);
       statG.fillRoundedRect(barX, y, barW, barH, 4);
-      // 채움
       statG.fillStyle(col, 1);
       statG.fillRoundedRect(barX, y, barW * ratio, barH, 4);
     });
@@ -423,9 +414,10 @@ export default class CharacterSelectScene extends Phaser.Scene {
     // 수치 텍스트
     const valDefs = [
       `${char.hp}`,
-      `${char.atk}`,
       `${char.def}`,
-      `${char.crit}%  ×${char.critDmg}`,
+      `${char.atk}`,
+      `${char.crit}%`,
+      `×${char.critDmg}`,
     ];
 
     valDefs.forEach((txt, i) => {

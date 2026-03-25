@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { i18n } from '@src/utils/localization';
 
 import bg1 from '@src/assets/img/background/background_1.png';
 import bg2 from '@src/assets/img/background/background_2.png';
@@ -41,7 +42,7 @@ export default class PreloadScene extends Phaser.Scene {
     progressBox.fillStyle(0x222222, 0.8);
     progressBox.fillRect(width / 2 - 160, height / 2 - 25, 320, 50);
 
-    const loadingText = this.add.text(width / 2, height / 2 - 50, '로딩 중...', {
+    const loadingText = this.add.text(width / 2, height / 2 - 50, i18n.t('loading'), {
       fontFamily: 'SBAggroM',
       fontSize: '20px',
       color: '#ffffff'

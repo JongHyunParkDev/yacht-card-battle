@@ -150,7 +150,7 @@ export default class IntroScene extends Phaser.Scene {
       }, hasSaveFile);
 
       // 3. 카드 도감
-      createButton('📖 카드 도감', () => {
+      createButton(i18n.t('cardGallery'), () => {
         goScene('CardGalleryScene');
       });
 

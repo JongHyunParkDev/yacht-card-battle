@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import Card, { CARD_WIDTH, CARD_HEIGHT } from '@src/objects/Card';
 import { CARD_DATA_LIST, CardData, CardElement } from '@src/data/cardData';
+import { i18n } from '@src/utils/localization';
 
 // ─── 상수 ────────────────────────────────────────────────────────────────────
 
@@ -20,14 +21,14 @@ const CARD_AREA_TOP = 112;
 /** 하단 버튼 영역 높이 */
 const FOOTER_H      = 44;
 
-const TABS: { label: string; element: CardElement | 'all' }[] = [
-  { label: '전체',    element: 'all' },
-  { label: '💧 물',   element: 'water' },
-  { label: '🔥 불',   element: 'fire' },
-  { label: '🌿 풀',   element: 'grass' },
-  { label: '⚡ 번개',  element: 'lightning' },
-  { label: '🪨 돌',   element: 'earth' },
-  { label: '⚔️ 일반', element: 'normal' },
+const TABS: { labelKey: string; element: CardElement | 'all' }[] = [
+  { labelKey: 'tabAll',       element: 'all' },
+  { labelKey: 'tabWater',     element: 'water' },
+  { labelKey: 'tabFire',      element: 'fire' },
+  { labelKey: 'tabGrass',     element: 'grass' },
+  { labelKey: 'tabLightning', element: 'lightning' },
+  { labelKey: 'tabEarth',     element: 'earth' },
+  { labelKey: 'tabNormal',    element: 'normal' },
 ];
 
 // ─── 팝업 레이아웃 상수 ───────────────────────────────────────────────────────
@@ -95,7 +96,7 @@ export default class CardGalleryScene extends Phaser.Scene {
     g.lineStyle(1, GOLD, 0.6);
     g.lineBetween(0, 54, w, 54);
 
-    this.add.text(w / 2, 27, '📖  카드 도감', {
+    this.add.text(w / 2, 27, i18n.t('cardGallery'), {
       fontFamily: 'SBAggroB', fontSize: '22px', color: GOLD_HEX,
     }).setOrigin(0.5);
   }
@@ -116,7 +117,7 @@ export default class CardGalleryScene extends Phaser.Scene {
       this.tabBg.fillStyle(isActive ? GOLD : 0x2a2520, 1);
       this.tabBg.fillRoundedRect(startX + idx * tabW + 2, tabY - 14, tabW - 4, 28, 5);
 
-      const btn = this.add.text(tx, tabY, tab.label, {
+      const btn = this.add.text(tx, tabY, i18n.t(tab.labelKey), {
         fontFamily: 'SBAggroM', fontSize: '11px',
         color: isActive ? '#000000' : DIM_HEX,
       }).setOrigin(0.5).setInteractive({ useHandCursor: true });
@@ -204,7 +205,7 @@ export default class CardGalleryScene extends Phaser.Scene {
   }
 
   private drawBackButton(w: number, h: number) {
-    const btn = this.add.text(w - 20, h - 20, '← 뒤로', {
+    const btn = this.add.text(w - 20, h - 20, '← ' + i18n.t('back'), {
       fontFamily: 'SBAggroM', fontSize: '16px', color: GOLD_HEX,
     }).setOrigin(1, 1).setInteractive({ useHandCursor: true }).setDepth(10);
 
@@ -318,7 +319,7 @@ export default class CardGalleryScene extends Phaser.Scene {
     let iy = 22;
 
     // 이름
-    popup.add(this.add.text(ix, iy, cardData.name, {
+    popup.add(this.add.text(ix, iy, i18n.t(cardData.nameKey), {
       fontFamily: 'SBAggroB', fontSize: '15px', color: GOLD_HEX,
       wordWrap: { width: INFO_COL_W },
     }));
@@ -336,7 +337,7 @@ export default class CardGalleryScene extends Phaser.Scene {
         fontFamily: 'SBAggroB', fontSize: '13px', color: '#ffe033',
       }));
     } else {
-      popup.add(this.add.text(ix, iy, '(등급 없음)', {
+      popup.add(this.add.text(ix, iy, i18n.t('noGrade'), {
         fontFamily: 'SBAggroL', fontSize: '11px', color: DIM_HEX,
       }));
     }
@@ -350,9 +351,9 @@ export default class CardGalleryScene extends Phaser.Scene {
     iy += 8;
 
     popup.add(this.add.text(ix + 4, iy, [
-      `⚔  공격력:  ${cardData.attack}`,
-      `🛡  방어력:  ${cardData.defense}`,
-      `💠  마나 비용:  ${cardData.cost}`,
+      `${i18n.t('cardAttack')}:  ${cardData.attack}`,
+      `${i18n.t('cardDefense')}:  ${cardData.defense}`,
+      `${i18n.t('cardCost')}:  ${cardData.cost}`,
     ], {
       fontFamily: 'SBAggroM', fontSize: '12px', color: '#e6d8b8', lineSpacing: 10,
     }));
@@ -365,7 +366,7 @@ export default class CardGalleryScene extends Phaser.Scene {
     descBg.fillRoundedRect(ix - 4, iy, INFO_COL_W + 4, descH, 6);
     popup.add(descBg);
 
-    popup.add(this.add.text(ix + 4, iy + 6, cardData.description, {
+    popup.add(this.add.text(ix + 4, iy + 6, i18n.t(cardData.descKey), {
       fontFamily: 'SBAggroL', fontSize: '11px', color: '#cccccc',
       wordWrap: { width: INFO_COL_W - 8 }, lineSpacing: 5,
     }));
@@ -381,10 +382,10 @@ export default class CardGalleryScene extends Phaser.Scene {
   }
 
   private elementLabel(el: CardElement | 'all'): string {
-    const map: Record<string, string> = {
-      water: '💧 물', fire: '🔥 불', grass: '🌿 풀',
-      lightning: '⚡ 번개', earth: '🪨 돌', normal: '⚔️ 일반',
+    const keyMap: Record<string, string> = {
+      water: 'tabWater', fire: 'tabFire', grass: 'tabGrass',
+      lightning: 'tabLightning', earth: 'tabEarth', normal: 'tabNormal',
     };
-    return map[el] ?? el;
+    return keyMap[el] ? i18n.t(keyMap[el]) : el;
   }
 }

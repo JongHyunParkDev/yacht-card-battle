@@ -75,8 +75,8 @@ export default class SettingsScene extends Phaser.Scene {
 
     const langHtml = `
       <select id="lang-select" class="settings-select">
-        <option value="ko" ${this.settings.language === 'ko' ? 'selected' : ''}>KOREAN</option>
-        <option value="en" ${this.settings.language === 'en' ? 'selected' : ''}>ENGLISH</option>
+        <option value="ko" ${this.settings.language === 'ko' ? 'selected' : ''}>${i18n.t('langKorean')}</option>
+        <option value="en" ${this.settings.language === 'en' ? 'selected' : ''}>${i18n.t('langEnglish')}</option>
       </select>
     `;
     const langDom    = this.add.dom(0, 0).createFromHTML(langHtml).setOrigin(0, 0.5);

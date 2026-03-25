@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { CardData, STAR_ATTR_INDEX } from '@src/data/cardData';
+import { i18n } from '@src/utils/localization';
 
 // ─── 레이아웃 상수 ────────────────────────────────────────────────────────────
 
@@ -129,7 +130,7 @@ export default class Card extends Phaser.GameObjects.Container {
   /** 좌상단: 카드 이름 */
   private drawTitle() {
     this.add(
-      this.scene.add.text(PAD, PAD, this.cardInfo.name, {
+      this.scene.add.text(PAD, PAD, i18n.t(this.cardInfo.nameKey), {
         fontFamily: 'SBAggroB',
         fontSize: '11px',
         color: '#e8d9b0',
@@ -190,7 +191,7 @@ export default class Card extends Phaser.GameObjects.Container {
       this.scene.add.text(
         PAD + INNER_PAD,
         DESC_Y + INNER_PAD,
-        this.cardInfo.description,
+        i18n.t(this.cardInfo.descKey),
         {
           fontFamily: 'SBAggroL',
           fontSize: '9px',

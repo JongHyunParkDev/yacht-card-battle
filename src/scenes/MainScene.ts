@@ -308,7 +308,7 @@ export default class MainScene extends Phaser.Scene {
 
     // 좌측: 캐릭터 정보
     const leftW      = panelW * 0.4;
-    const leftTitle  = this.add.text(leftW / 2, DECK_PANEL_HANDLE_H + 25, '캐릭터 정보', {
+    const leftTitle  = this.add.text(leftW / 2, DECK_PANEL_HANDLE_H + 25, i18n.t('charInfo'), {
       fontFamily: 'SBAggroB', fontSize: '16px', color: '#d4af37',
     }).setOrigin(0.5);
     const leftContent = this.add.text(20, DECK_PANEL_HANDLE_H + 55,
@@ -322,7 +322,7 @@ export default class MainScene extends Phaser.Scene {
 
     // 우측: 덱 카드 목록
     const rightW      = panelW * 0.6;
-    const rightTitle  = this.add.text(leftW + rightW / 2, DECK_PANEL_HANDLE_H + 25, '현재 덱 리스트', {
+    const rightTitle  = this.add.text(leftW + rightW / 2, DECK_PANEL_HANDLE_H + 25, i18n.t('deckList'), {
       fontFamily: 'SBAggroB', fontSize: '16px', color: '#d4af37',
     }).setOrigin(0.5);
     const rightContent = this.add.text(leftW + 20, DECK_PANEL_HANDLE_H + 55,
