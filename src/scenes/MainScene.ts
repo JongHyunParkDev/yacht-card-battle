@@ -7,6 +7,8 @@ const MAP_WORLD_HEIGHT = 2400;
 const MAP_NUM_LAYERS   = 12;
 const MAP_ZOOM         = 1.1;
 
+const PATH_DOT_INTERVAL = 38; // 도트 간 간격(px) — 거리에 비례해 도트 수 자동 결정
+
 const DECK_PANEL_HANDLE_H = 34;
 const DECK_PANEL_HANDLE_W = 120;
 const DECK_COLOR_GOLD     = 0xd4af37;
@@ -50,6 +52,7 @@ export default class MainScene extends Phaser.Scene {
   private playerToken!: Phaser.GameObjects.Sprite;
   private pauseMenuContainer!: Phaser.GameObjects.Container;
   private deckWindowContainer!: Phaser.GameObjects.Container;
+  private activePathsGraphics!: Phaser.GameObjects.Graphics;
 
   constructor() {
     super('MainScene');
@@ -79,9 +82,10 @@ export default class MainScene extends Phaser.Scene {
     this.currentNodeId = startNode.id;
 
     this.drawNodePaths(allNodes);
+    this.activePathsGraphics = this.add.graphics().setDepth(4);
 
     const nodeSpritesMap = this.createNodeSprites(allNodes);
-    this.updateNodesVisibility(allNodes, nodeSpritesMap);
+    this.updateNodesVisibility(allNodes, nodeSpritesMap, true);
 
     this.createPlayerToken(startNode);
     this.setupInput(width, height);
@@ -89,11 +93,13 @@ export default class MainScene extends Phaser.Scene {
     // 덱 패널 생성 전 월드 오브젝트 목록 스냅샷
     const worldObjects = [...this.children.list];
     this.createDeckWindow(width, height);
+    const overlayContainer = this.createScreenOverlay(width, height);
 
     // UI 카메라: zoom=1, scroll=0 → 스크린 좌표 = 월드 좌표 (완전 고정)
     const uiCam = this.cameras.add(0, 0, width, height).setZoom(1);
     uiCam.ignore(worldObjects);
     this.cameras.main.ignore(this.deckWindowContainer);
+    this.cameras.main.ignore(overlayContainer);
 
     // 노드 클릭 이벤트 등록 (allNodes, nodeSpritesMap 클로저로 사용)
     this.registerNodeClickEvents(allNodes, nodeSpritesMap);
@@ -108,11 +114,56 @@ export default class MainScene extends Phaser.Scene {
   private initCamera(mapWorldWidth: number) {
     this.cameras.main.setBounds(0, 0, mapWorldWidth, MAP_WORLD_HEIGHT);
     this.cameras.main.setZoom(MAP_ZOOM);
+    this.cameras.main.setRoundPixels(true);
   }
 
   private initBackground(mapWorldWidth: number) {
     const bg = this.add.image(mapWorldWidth / 2, MAP_WORLD_HEIGHT / 2, 'map_bg');
     bg.setDisplaySize(mapWorldWidth, MAP_WORLD_HEIGHT);
+
+    // 다크 블루 분위기 틴트 (맵 위에 바로 얹힘)
+    const tint = this.add.graphics();
+    tint.fillStyle(0x08081a, 0.40);
+    tint.fillRect(0, 0, mapWorldWidth, MAP_WORLD_HEIGHT);
+    tint.setDepth(1);
+  }
+
+  /** 화면 고정 오버레이 (비네트 + 스캔라인 + 골드 프레임) — UI 카메라 전용 */
+  private createScreenOverlay(width: number, height: number): Phaser.GameObjects.Container {
+    const container = this.add.container(0, 0);
+    container.setDepth(45);
+
+    // ── 비네트: 몇 개의 반투명 사각형으로 그라디언트 근사 ──────────────────
+    const vignette = this.add.graphics();
+    const strips = [
+      { a: 0.45, s: 32 },
+      { a: 0.28, s: 65 },
+      { a: 0.13, s: 105 },
+    ];
+    strips.forEach(({ a, s }) => {
+      vignette.fillStyle(0x000000, a);
+      vignette.fillRect(0, 0, width, s);                 // 상단
+      vignette.fillRect(0, height - s, width, s);        // 하단
+      vignette.fillRect(0, 0, s * 0.65, height);         // 좌측
+      vignette.fillRect(width - s * 0.65, 0, s * 0.65, height); // 우측
+    });
+
+    // ── 스캔라인: 넓은 간격으로 드로우콜 최소화 ─────────────────────────────
+    const scanlines = this.add.graphics();
+    scanlines.lineStyle(1, 0x000000, 0.10);
+    for (let y = 0; y < height; y += 6) {
+      scanlines.lineBetween(0, y, width, y);
+    }
+
+    // ── 골드 프레임 보더 ─────────────────────────────────────────────────────
+    const frame = this.add.graphics();
+    frame.lineStyle(2, DECK_COLOR_GOLD, 0.55);
+    frame.strokeRect(3, 3, width - 6, height - 6);
+    frame.lineStyle(1, DECK_COLOR_GOLD, 0.20);
+    frame.strokeRect(7, 7, width - 14, height - 14);
+
+    container.add([vignette, scanlines, frame]);
+    return container;
   }
 
   /** 이어하기면 세이브 파일에서 해시 로드, 없으면 새로 생성 후 저장 */
@@ -156,26 +207,31 @@ export default class MainScene extends Phaser.Scene {
     return mapHash;
   }
 
-  /** 노드 간 점선 경로 그리기 */
+  /** 노드 간 경로 그리기 — 베지어 곡선 점선 (고정 스타일, 배치 최적화) */
   private drawNodePaths(allNodes: MapNode[]) {
     const g = this.add.graphics();
-    g.fillStyle(0xffffff, 1);
-    g.lineStyle(2, 0x000000, 1);
+    g.setDepth(3);
+    g.fillStyle(0xd4af37, 0.75); // fillStyle 한 번만
 
     allNodes.forEach(node => {
       node.nextNodes.forEach(nextId => {
-        const nextNode = allNodes.find(n => n.id === nextId);
-        if (!nextNode) return;
+        const next = allNodes.find(n => n.id === nextId);
+        if (!next) return;
 
-        const dist     = Phaser.Math.Distance.Between(node.x, node.y, nextNode.x, nextNode.y);
-        const dotCount = Math.floor(dist / 20);
+        const cy1 = node.y + (next.y - node.y) * 0.35;
+        const cy2 = next.y - (next.y - node.y) * 0.35;
 
-        for (let i = 1; i < dotCount; i++) {
-          const t = i / dotCount;
-          const px = Phaser.Math.Linear(node.x, nextNode.x, t);
-          const py = Phaser.Math.Linear(node.y, nextNode.y, t);
-          g.fillCircle(px, py, 4);
-          g.strokeCircle(px, py, 4);
+        const dist  = Phaser.Math.Distance.Between(node.x, node.y, next.x, next.y);
+        const steps = Math.max(2, Math.round(dist / PATH_DOT_INTERVAL));
+
+        for (let i = 1; i < steps; i++) {
+          const t  = i / steps;
+          const mt = 1 - t;
+          const px = mt * mt * mt * node.x + 3 * mt * mt * t * node.x
+                   + 3 * mt * t * t * next.x + t * t * t * next.x;
+          const py = mt * mt * mt * node.y + 3 * mt * mt * t * cy1
+                   + 3 * mt * t * t * cy2   + t * t * t * next.y;
+          g.fillCircle(px, py, 3);
         }
       });
     });
@@ -193,13 +249,14 @@ export default class MainScene extends Phaser.Scene {
         dot.lineStyle(3, 0x000000, 1);
         dot.fillCircle(node.x, node.y, 16);
         dot.strokeCircle(node.x, node.y, 16);
+        dot.setDepth(6);
         nodeSpritesMap.set(node.id, dot);
         return;
       }
 
       const frameName = this.getNodeFrameName(node.type);
       const sprite    = this.add.sprite(node.x, node.y, 'map_nodes', frameName);
-      sprite.setScale(NODE_SCALE_DEFAULT);
+      sprite.setScale(NODE_SCALE_DEFAULT).setDepth(6);
       sprite.setInteractive({ useHandCursor: true });
       nodeSpritesMap.set(node.id, sprite);
 
@@ -230,18 +287,14 @@ export default class MainScene extends Phaser.Scene {
         if (this.isPaused || this.isMoving) return;
 
         const currentNode = allNodes.find(n => n.id === this.currentNodeId);
-        if (!currentNode) {
-          this.cameras.main.shake(100, 0.005);
-          return;
-        }
+        if (!currentNode) return;
 
         if (currentNode.nextNodes.includes(node.id)) {
           this.movePlayer(node.x, node.y);
           this.currentNodeId = node.id;
-          this.updateNodesVisibility(allNodes, nodeSpritesMap);
-        } else {
-          this.cameras.main.shake(100, 0.005);
+          this.updateNodesVisibility(allNodes, nodeSpritesMap, true);
         }
+        // 불가 노드 클릭 시 아무 반응 없음 (shake 제거)
       });
     });
   }
@@ -443,7 +496,11 @@ export default class MainScene extends Phaser.Scene {
   // 노드 비주얼 업데이트
   // ─────────────────────────────────────────────────────────────────────────────
 
-  private updateNodesVisibility(allNodes: MapNode[], nodeSpritesMap: Map<number, NodeSprite>) {
+  private updateNodesVisibility(
+    allNodes: MapNode[],
+    nodeSpritesMap: Map<number, NodeSprite>,
+    redrawPaths = false,
+  ) {
     const currentNode = allNodes.find(n => n.id === this.currentNodeId);
     if (!currentNode) return;
 
@@ -455,19 +512,55 @@ export default class MainScene extends Phaser.Scene {
       if (!(sprite instanceof Phaser.GameObjects.Sprite)) return;
 
       if (node.layer <= currentLayer && node.id !== this.currentNodeId) {
-        // 이미 지나간 노드
         sprite.setAlpha(0.3).setScale(NODE_SCALE_PASSED).setTint(0x888888);
       } else if (node.id === this.currentNodeId) {
-        // 현재 위치
         sprite.setAlpha(1).setScale(NODE_SCALE_DEFAULT).clearTint();
       } else if (node.layer === currentLayer + 1 && currentNode.nextNodes.includes(node.id)) {
-        // 다음 진행 가능 노드
         this.tweens.killTweensOf(sprite);
         sprite.setAlpha(1).setScale(NODE_SCALE_DEFAULT).clearTint();
       } else {
-        // 아직 갈 수 없는 미래 노드
         sprite.setAlpha(0.6).setScale(NODE_SCALE_INACTIVE).clearTint();
         this.tweens.killTweensOf(sprite);
+      }
+    });
+
+    if (redrawPaths) {
+      this.redrawActivePaths(currentNode, allNodes);
+    }
+  }
+
+  /** 현재 노드 → 진행 가능 노드 경로 강조 (흰색 글로우 이중 레이어) */
+  private redrawActivePaths(currentNode: MapNode, allNodes: MapNode[]) {
+    const g = this.activePathsGraphics;
+    g.clear();
+
+    currentNode.nextNodes.forEach(nextId => {
+      const next = allNodes.find(n => n.id === nextId);
+      if (!next) return;
+
+      const cy1   = currentNode.y + (next.y - currentNode.y) * 0.35;
+      const cy2   = next.y - (next.y - currentNode.y) * 0.35;
+      const dist  = Phaser.Math.Distance.Between(currentNode.x, currentNode.y, next.x, next.y);
+      const steps = Math.max(2, Math.round(dist / PATH_DOT_INTERVAL));
+
+      // 1패스: 외곽 글로우 (큰 반지름, 낮은 투명도)
+      g.fillStyle(0xffffff, 0.25);
+      for (let i = 1; i < steps; i++) {
+        const t  = i / steps;
+        const mt = 1 - t;
+        const px = mt*mt*mt*currentNode.x + 3*mt*mt*t*currentNode.x + 3*mt*t*t*next.x + t*t*t*next.x;
+        const py = mt*mt*mt*currentNode.y + 3*mt*mt*t*cy1           + 3*mt*t*t*cy2    + t*t*t*next.y;
+        g.fillCircle(px, py, 6);
+      }
+
+      // 2패스: 중심 코어 (작은 반지름, 완전 불투명 흰색)
+      g.fillStyle(0xffffff, 1);
+      for (let i = 1; i < steps; i++) {
+        const t  = i / steps;
+        const mt = 1 - t;
+        const px = mt*mt*mt*currentNode.x + 3*mt*mt*t*currentNode.x + 3*mt*t*t*next.x + t*t*t*next.x;
+        const py = mt*mt*mt*currentNode.y + 3*mt*mt*t*cy1           + 3*mt*t*t*cy2    + t*t*t*next.y;
+        g.fillCircle(px, py, 2.5);
       }
     });
   }
@@ -574,7 +667,7 @@ export default class MainScene extends Phaser.Scene {
     // 레이어별 노드 생성
     for (let layer = 0; layer < MAP_NUM_LAYERS; layer++) {
       const y        = height - 200 - layer * layerSpacingY;
-      const numNodes = isEdgeLayer(layer) ? 1 : randInt(2, 4);
+      const numNodes = isEdgeLayer(layer) ? 1 : randInt(2, 3);
       const spacingX = width / (numNodes + 1);
       const nodes: MapNode[] = [];
 
@@ -597,34 +690,51 @@ export default class MainScene extends Phaser.Scene {
       mapLayersData.push(nodes);
     }
 
+    // 각 레이어를 x 좌표 기준으로 정렬 → 좌우 교차 방지
+    for (const layer of mapLayersData) {
+      layer.sort((a, b) => a.x - b.x);
+    }
+
     // 레이어 간 엣지(Edge) 연결
     for (let layer = 0; layer < MAP_NUM_LAYERS - 1; layer++) {
       const cur  = mapLayersData[layer];
       const next = mapLayersData[layer + 1];
 
       cur.forEach((node, idx) => {
-        const ratio   = idx / Math.max(1, cur.length - 1);
-        const nextIdx = Math.round(ratio * (next.length - 1));
-        node.nextNodes.push(next[nextIdx].id);
+        // cur 1개면 center로 매핑, 그 외엔 비율 기반
+        const ratio   = cur.length === 1 ? 0.5 : idx / (cur.length - 1);
+        const baseIdx = Math.round(ratio * (next.length - 1));
 
-        // 30% 확률로 이웃 노드에도 추가 연결
-        if (random() < 0.3 && next.length > 1) {
-          const extraIdx = (nextIdx + 1) % next.length;
-          if (!node.nextNodes.includes(next[extraIdx].id)) {
-            node.nextNodes.push(next[extraIdx].id);
+        // 주 연결
+        node.nextNodes.push(next[baseIdx].id);
+
+        // 보조 연결: 항상 추가, baseIdx ±1 인접만 허용 (wrap-around 없음)
+        if (next.length > 1) {
+          const candidates: number[] = [];
+          if (baseIdx > 0)               candidates.push(baseIdx - 1);
+          if (baseIdx < next.length - 1) candidates.push(baseIdx + 1);
+
+          if (candidates.length > 0) {
+            const best = candidates.reduce((a, b) =>
+              Math.abs(next[a].x - node.x) < Math.abs(next[b].x - node.x) ? a : b,
+            );
+            if (!node.nextNodes.includes(next[best].id)) {
+              node.nextNodes.push(next[best].id);
+            }
           }
         }
       });
 
-      // 고립 노드 방어: 연결되지 않은 다음 레이어 노드를 강제로 연결
-      next.forEach((nextNode, nextIdx) => {
+      // 고립 노드 방어: x 거리 기준 가장 가까운 cur 노드에 연결
+      next.forEach(nextNode => {
         const isLinked = cur.some(n => n.nextNodes.includes(nextNode.id));
         if (isLinked) return;
 
-        const ratio   = nextIdx / Math.max(1, next.length - 1);
-        const currIdx = Math.round(ratio * (cur.length - 1));
-        if (!cur[currIdx].nextNodes.includes(nextNode.id)) {
-          cur[currIdx].nextNodes.push(nextNode.id);
+        const closestIdx = cur.reduce((best, _, ci) =>
+          Math.abs(cur[ci].x - nextNode.x) < Math.abs(cur[best].x - nextNode.x) ? ci : best, 0,
+        );
+        if (!cur[closestIdx].nextNodes.includes(nextNode.id)) {
+          cur[closestIdx].nextNodes.push(nextNode.id);
         }
       });
     }
