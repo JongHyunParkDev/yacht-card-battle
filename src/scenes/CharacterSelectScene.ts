@@ -5,10 +5,10 @@ import '@src/styles/colors.css';
 // ─── 타입 / 상수 ──────────────────────────────────────────────────────────────
 
 const WEAPON_TYPES = ['swordShield', 'bow', 'greatsword', 'hammer', 'spear'] as const;
-type WeaponType = typeof WEAPON_TYPES[number];
+export type WeaponType = typeof WEAPON_TYPES[number];
 
 /** 무기 타입별 색상 */
-const WEAPON_COLORS: Record<WeaponType, { card: number; accent: string }> = {
+export const WEAPON_COLORS: Record<WeaponType, { card: number; accent: string }> = {
   swordShield: { card: 0x4a90d9, accent: '#4a90d9' }, // 파란 강철
   bow:         { card: 0x6ab04c, accent: '#6ab04c' }, // 숲 녹색
   greatsword:  { card: 0xc0392b, accent: '#c0392b' }, // 진홍
@@ -17,7 +17,7 @@ const WEAPON_COLORS: Record<WeaponType, { card: number; accent: string }> = {
 };
 
 /** 무기 타입 → 캐릭터 idle 스프라이트 키 */
-const CHAR_SPRITE_KEY: Record<WeaponType, string> = {
+export const CHAR_SPRITE_KEY: Record<WeaponType, string> = {
   swordShield: 'char_shield',
   bow:         'char_bow',
   greatsword:  'char_sword',
@@ -26,7 +26,7 @@ const CHAR_SPRITE_KEY: Record<WeaponType, string> = {
 };
 
 /** 무기 타입 → idle 프레임 수 */
-const CHAR_FRAME_COUNT: Record<WeaponType, number> = {
+export const CHAR_FRAME_COUNT: Record<WeaponType, number> = {
   swordShield: 6,
   bow:         5,
   greatsword:  7,
@@ -47,7 +47,7 @@ export interface CharacterDef {
 }
 
 /** 무기 타입별 캐릭터 정의 */
-const CHARACTERS: CharacterDef[] = [
+export const CHARACTERS: CharacterDef[] = [
   {
     id: 'guardian',
     weapon: 'swordShield',

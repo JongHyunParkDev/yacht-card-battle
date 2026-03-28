@@ -59,6 +59,11 @@ export default class IntroScene extends Phaser.Scene {
       });
     };
 
+    // 레거시 패널 참조 + 크기 (updateLayout에서 위치 갱신용)
+    let legacyPanel: Phaser.GameObjects.Container | null = null;
+    let legacyPanelW = 280;
+    let legacyPanelH = 0;
+
     // 레이아웃 업데이트 함수 (리사이즈 시 호출)
     const updateLayout = () => {
       const { width, height } = this.scale;
@@ -81,6 +86,9 @@ export default class IntroScene extends Phaser.Scene {
       buttons.forEach((btn, index) => {
         btn.setPosition(100, height / 2 + (index * spacing));
       });
+
+      // 레거시 패널 위치 갱신 (우측 하단)
+      if (legacyPanel) legacyPanel.setPosition(width - legacyPanelW - 16, height - legacyPanelH - 16);
     };
 
     // Button Style Helper (내부 사용)
@@ -116,30 +124,106 @@ export default class IntroScene extends Phaser.Scene {
       return button;
     };
 
-    // 일렉트론 환경에서 세이브 파일 존재 여부 확인 후 버튼 생성
+    // 레거시 패널 (누적 골드 + 장비 컬렉션) — 우측 하단 고정
+    const buildLegacyPanel = (totalGold: number, allEquipment: string[]) => {
+      if (legacyPanel) legacyPanel.destroy();
+
+      const ICON  = 20;   // 아이콘 크기
+      const PAD   = 14;   // 내부 여백
+      const LINE  = 26;   // 줄 높이
+      const DIVH  = 1;    // 구분선 높이
+      const panelW = 280;
+
+      // 높이: 골드행 + 구분선 + 장비 헤더 + 장비 목록(최소 1줄)
+      const eqRows = Math.max(1, allEquipment.length);
+      const panelH = PAD + LINE + 8 + DIVH + 8 + LINE + eqRows * LINE + PAD;
+      legacyPanelW = panelW;
+      legacyPanelH = panelH;
+
+      const cont = this.add.container(0, 0); // setPosition은 아래에서
+
+      // 배경
+      const bg = this.add.graphics();
+      bg.fillStyle(0x0a0e14, 0.90);
+      bg.lineStyle(1, 0xd4af37, 0.45);
+      bg.fillRoundedRect(0, 0, panelW, panelH, 10);
+      bg.strokeRoundedRect(0, 0, panelW, panelH, 10);
+      cont.add(bg);
+
+      // 골드 아이콘 + 텍스트 (attr_6 = 별)
+      const goldIcon = this.add.image(PAD + ICON / 2, PAD + LINE / 2, 'attr_icons', 'attr_6');
+      goldIcon.setDisplaySize(ICON, ICON);
+      const goldTxt = this.add.text(PAD + ICON + 8, PAD + 2, `누적 골드  ${totalGold} G`, {
+        fontFamily: 'SBAggroB', fontSize: '15px', color: '#d4af37',
+      });
+      cont.add([goldIcon, goldTxt]);
+
+      // 구분선
+      const divY = PAD + LINE + 8;
+      const div = this.add.graphics();
+      div.lineStyle(1, 0xd4af37, 0.25);
+      div.lineBetween(PAD, divY, panelW - PAD, divY);
+      cont.add(div);
+
+      // 장비 헤더 (attr_5 = 일반)
+      const eqIcon = this.add.image(PAD + ICON / 2, divY + 8 + LINE / 2, 'attr_icons', 'attr_5');
+      eqIcon.setDisplaySize(ICON, ICON);
+      const eqLabel = this.add.text(PAD + ICON + 8, divY + 10, `수집 장비  ${allEquipment.length}종`, {
+        fontFamily: 'SBAggroM', fontSize: '14px', color: '#aaaaaa',
+      });
+      cont.add([eqIcon, eqLabel]);
+
+      // 장비 목록
+      const listStartY = divY + 8 + LINE;
+      if (allEquipment.length === 0) {
+        const t = this.add.text(PAD + ICON + 8, listStartY + 4, '아직 없음', {
+          fontFamily: 'SBAggroL', fontSize: '13px', color: '#555555',
+        });
+        cont.add(t);
+      } else {
+        allEquipment.forEach((eq, i) => {
+          const t = this.add.text(PAD + ICON + 8, listStartY + i * LINE + 4, eq, {
+            fontFamily: 'SBAggroL', fontSize: '13px', color: '#cccccc',
+          });
+          cont.add(t);
+        });
+      }
+
+      legacyPanel = cont;
+      cont.setPosition(this.scale.width - panelW - 16, this.scale.height - panelH - 16);
+    };
+
+    // 일렉트론 환경에서 세이브 파일 존재 여부 + 레거시 로드
     const initButtons = async () => {
       let hasSaveFile = false;
-      
+      let totalGold   = 0;
+      let allEquipment: string[] = [];
+
       // @ts-ignore
       if (typeof require !== 'undefined') {
         try {
           const { ipcRenderer } = require('electron');
-          hasSaveFile = await ipcRenderer.invoke('check-save-file');
+          [hasSaveFile] = await Promise.all([
+            ipcRenderer.invoke('check-save-file'),
+          ]);
+          const legacyRes = await ipcRenderer.invoke('load-legacy');
+          if (legacyRes.success && legacyRes.data) {
+            totalGold    = legacyRes.data.totalGold    ?? 0;
+            allEquipment = legacyRes.data.allEquipment ?? [];
+          }
         } catch (e) {
-          console.error('세이브 파일 체크 실패:', e);
+          console.error('초기 로드 실패:', e);
         }
       }
+
+      buildLegacyPanel(totalGold, allEquipment);
 
       // 1. 새로하기
       createButton(i18n.t('newGame'), () => {
         if (hasSaveFile) {
-          // 기존 세이브 파일이 있을 경우 팝업으로 사용자 의사 확인
           const isConfirmed = confirm(i18n.t('newGameConfirm'));
-          if (isConfirmed) {
-            goScene('CharacterSelectScene');
-          }
+          if (isConfirmed) goScene('CharacterSelectScene');
         } else {
-          // 세이브 파일이 없으면 바로 캐릭터 선택으로
           goScene('CharacterSelectScene');
         }
       });
@@ -159,7 +243,7 @@ export default class IntroScene extends Phaser.Scene {
         goScene('SettingsScene');
       });
 
-      // 4. 게임 종료
+      // 5. 게임 종료
       createButton(i18n.t('exit'), () => {
         if (typeof window !== 'undefined' && window.close) window.close();
       });

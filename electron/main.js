@@ -50,6 +50,41 @@ function createWindow () {
     }
   });
 
+  // 영구 기록 저장 (골드/장비 — 게임 오버 후에도 유지)
+  ipcMain.handle('save-legacy', async (event, runData) => {
+    try {
+      const legacyPath = path.join(app.getPath('userData'), 'legacy.json');
+      let legacy = { runs: [], totalGold: 0, allEquipment: [] };
+      if (fs.existsSync(legacyPath)) {
+        try { legacy = JSON.parse(fs.readFileSync(legacyPath, 'utf-8')); } catch {}
+      }
+      legacy.runs.push(runData);
+      legacy.totalGold += (runData.gold ?? 0);
+      const equips = runData.equipment ?? [];
+      equips.forEach(eq => {
+        if (!legacy.allEquipment.includes(eq)) legacy.allEquipment.push(eq);
+      });
+      fs.writeFileSync(legacyPath, JSON.stringify(legacy, null, 2), 'utf-8');
+      return { success: true };
+    } catch (e) {
+      console.error('Legacy save failed:', e);
+      return { success: false, error: e.message };
+    }
+  });
+
+  // 영구 기록 로드
+  ipcMain.handle('load-legacy', async () => {
+    try {
+      const legacyPath = path.join(app.getPath('userData'), 'legacy.json');
+      if (fs.existsSync(legacyPath)) {
+        return { success: true, data: JSON.parse(fs.readFileSync(legacyPath, 'utf-8')) };
+      }
+      return { success: true, data: { runs: [], totalGold: 0, allEquipment: [] } };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
   // 세이브 파일 존재 여부 확인
   ipcMain.handle('check-save-file', async () => {
     const savePath = path.join(app.getPath('userData'), 'savegame.json');

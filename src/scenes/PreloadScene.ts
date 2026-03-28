@@ -9,6 +9,11 @@ import charHammerIdle from '@src/assets/img/char/hammer-idle.png';
 import charShieldIdle from '@src/assets/img/char/shield-idle.png';
 import charSpearIdle  from '@src/assets/img/char/spear-idle.png';
 import charSwordIdle  from '@src/assets/img/char/sword-idle.png';
+import charBowStatic    from '@src/assets/img/char/bow.png';
+import charHammerStatic from '@src/assets/img/char/hammer.png';
+import charShieldStatic from '@src/assets/img/char/shield.png';
+import charSpearStatic  from '@src/assets/img/char/spear.png';
+import charSwordStatic  from '@src/assets/img/char/sword.png';
 
 // Import map assets
 import mapBg from '@src/assets/img/map/map_bg.png';
@@ -144,6 +149,13 @@ export default class PreloadScene extends Phaser.Scene {
     this.load.spritesheet('char_shield', charShieldIdle, { frameWidth: 300, frameHeight: 400 });
     this.load.spritesheet('char_spear',  charSpearIdle,  { frameWidth: 300, frameHeight: 400 });
     this.load.spritesheet('char_sword',  charSwordIdle,  { frameWidth: 300, frameHeight: 400 });
+
+    // 캐릭터 정적 이미지 (덱 패널 표시용)
+    this.load.image('char_img_shield', charShieldStatic);
+    this.load.image('char_img_bow',    charBowStatic);
+    this.load.image('char_img_sword',  charSwordStatic);
+    this.load.image('char_img_hammer', charHammerStatic);
+    this.load.image('char_img_spear',  charSpearStatic);
 
     // 백그라운드 이미지 로드
     this.load.image('bg1', bg1);

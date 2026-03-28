@@ -1,5 +1,28 @@
 import Phaser from 'phaser';
 import { i18n } from '@src/utils/localization';
+import { getNodeFrameName, NODE_TYPE_GROUPS, BOSS_NODE_TYPES } from '@src/data/nodeTypes';
+import { CharacterDef, WeaponType, CHAR_SPRITE_KEY, CHAR_FRAME_COUNT, WEAPON_COLORS, CHARACTERS } from '@src/scenes/CharacterSelectScene';
+import { CARD_DATA_LIST } from '@src/data/cardData';
+import type { CardData } from '@src/data/cardData';
+import Card, { CARD_WIDTH, CARD_HEIGHT } from '@src/objects/Card';
+
+interface DeckEntry { card: CardData; count: number; }
+
+interface SaveState {
+  mapHash: string;
+  currentNodeId?: number;
+  playerGold?: number;
+  playerHp?: number;
+  playerMaxHp?: number;
+  playerAtk?: number;
+  playerDef?: number;
+  playerCrit?: number;
+  playerCritDmg?: number;
+  characterId?: string;
+  deck?: { cardId: number; count: number }[];
+  equipment?: string[];
+  maxEquipSlots?: number;
+}
 
 // ─── 상수 ─────────────────────────────────────────────────────────────────────
 
@@ -43,16 +66,31 @@ type NodeSprite = Phaser.GameObjects.Sprite | Phaser.GameObjects.Graphics;
 
 export default class MainScene extends Phaser.Scene {
   // ── 상태 필드 ────────────────────────────────────────────────────────────────
-  private isContinue = false;
-  private isPaused   = false;
-  private isMoving   = false;
+  private isContinue    = false;
+  private isPaused      = false;
+  private isMoving      = false;
   private currentNodeId = -1;
+  private isReady     = false;
+  private character?: CharacterDef;
+  private playerDeck: DeckEntry[] = [];
+  // ── 플레이어 스탯 ─────────────────────────────────────────────────────────
+  private playerGold      = 50;
+  private playerHp        = 100;
+  private playerMaxHp     = 100;
+  private playerAtk       = 0;
+  private playerDef       = 0;
+  private playerCrit      = 0;
+  private playerCritDmg   = 1.5;
+  private playerEquipment: string[] = [];
+  private maxEquipSlots   = 1;
+  private mapHash         = '';
 
   // ── 게임 오브젝트 참조 ────────────────────────────────────────────────────────
   private playerToken!: Phaser.GameObjects.Sprite;
   private pauseMenuContainer!: Phaser.GameObjects.Container;
   private deckWindowContainer!: Phaser.GameObjects.Container;
   private activePathsGraphics!: Phaser.GameObjects.Graphics;
+  private fpsTxt?: Phaser.GameObjects.Text;
 
   constructor() {
     super('MainScene');
@@ -62,9 +100,10 @@ export default class MainScene extends Phaser.Scene {
   // Phaser 라이프사이클
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /** IntroScene에서 전달된 data를 받습니다 */
-  init(data: { isContinue?: boolean }) {
+  /** CharacterSelectScene에서 전달된 data를 받습니다 */
+  init(data: { isContinue?: boolean; character?: CharacterDef }) {
     this.isContinue = data?.isContinue ?? false;
+    this.character  = data?.character;
   }
 
   async create() {
@@ -74,12 +113,30 @@ export default class MainScene extends Phaser.Scene {
     this.initCamera(mapWorldWidth);
     this.initBackground(mapWorldWidth);
 
-    const mapHash      = await this.loadOrCreateMapHash();
-    const mapLayersData = this.generateMapData(mapHash, mapWorldWidth, MAP_WORLD_HEIGHT);
+    const state = await this.loadOrCreateSaveState();
+    this.mapHash = state.mapHash;
+    if (!this.character && state.characterId) {
+      this.character = CHARACTERS.find(c => c.id === state.characterId);
+    }
+    // 캐릭터 기본값 → 세이브 값으로 덮어쓰기
+    const base = this.character;
+    this.playerGold    = state.playerGold    ?? 50;
+    this.playerHp      = state.playerHp      ?? (base?.hp      ?? 100);
+    this.playerMaxHp   = state.playerMaxHp   ?? (base?.hp      ?? 100);
+    this.playerAtk     = state.playerAtk     ?? (base?.atk     ?? 0);
+    this.playerDef     = state.playerDef     ?? (base?.def     ?? 0);
+    this.playerCrit      = state.playerCrit    ?? (base?.crit    ?? 0);
+    this.playerCritDmg   = state.playerCritDmg ?? (base?.critDmg ?? 1.5);
+    this.playerEquipment = state.equipment     ?? [];
+    this.maxEquipSlots   = state.maxEquipSlots ?? 1;
+
+    const mapLayersData = this.generateMapData(this.mapHash, mapWorldWidth, MAP_WORLD_HEIGHT);
     const allNodes      = mapLayersData.flat();
     const startNode     = mapLayersData[0][0];
 
-    this.currentNodeId = startNode.id;
+    this.currentNodeId = (state.currentNodeId !== undefined && state.currentNodeId >= 0)
+      ? state.currentNodeId
+      : startNode.id;
 
     this.drawNodePaths(allNodes);
     this.activePathsGraphics = this.add.graphics().setDepth(4);
@@ -87,7 +144,16 @@ export default class MainScene extends Phaser.Scene {
     const nodeSpritesMap = this.createNodeSprites(allNodes);
     this.updateNodesVisibility(allNodes, nodeSpritesMap, true);
 
-    this.createPlayerToken(startNode);
+    if (state.deck && state.deck.length > 0) {
+      this.playerDeck = state.deck
+        .map(e => ({ card: CARD_DATA_LIST.find(c => c.id === e.cardId)!, count: e.count }))
+        .filter(e => e.card != null);
+    } else {
+      this.buildInitialDeck();
+    }
+    this.ensureCharAnimations();
+    const spawnNode = allNodes.find(n => n.id === this.currentNodeId) ?? startNode;
+    this.createPlayerToken(spawnNode);
     this.setupInput(width, height);
 
     // 덱 패널 생성 전 월드 오브젝트 목록 스냅샷
@@ -101,11 +167,26 @@ export default class MainScene extends Phaser.Scene {
     this.cameras.main.ignore(this.deckWindowContainer);
     this.cameras.main.ignore(overlayContainer);
 
+    // 개발 모드 FPS 표시 (우상단)
+    if (import.meta.env.DEV) {
+      this.fpsTxt = this.add.text(width - 6, 6, 'FPS --', {
+        fontFamily: 'monospace', fontSize: '13px', color: '#00ff88',
+        backgroundColor: '#00000099', padding: { x: 5, y: 2 },
+      }).setOrigin(1, 0).setDepth(999);
+      this.cameras.main.ignore(this.fpsTxt);
+    }
+
     // 노드 클릭 이벤트 등록 (allNodes, nodeSpritesMap 클로저로 사용)
     this.registerNodeClickEvents(allNodes, nodeSpritesMap);
+    this.isReady = true;
   }
 
-  update() { /* 덱 패널은 UI 카메라로 고정 — 매 프레임 positioning 불필요 */ }
+  update() {
+    if (!this.isReady || !this.fpsTxt) return;
+    try {
+      this.fpsTxt.setText(`FPS ${Math.round(this.game.loop.actualFps)}`);
+    } catch { /* canvas not ready */ }
+  }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // create() 초기화 세부 메서드
@@ -166,45 +247,110 @@ export default class MainScene extends Phaser.Scene {
     return container;
   }
 
-  /** 이어하기면 세이브 파일에서 해시 로드, 없으면 새로 생성 후 저장 */
-  private async loadOrCreateMapHash(): Promise<string> {
+  /** 이어하기면 세이브 파일에서 상태 로드, 없으면 새로 생성 후 저장 */
+  private async loadOrCreateSaveState(): Promise<SaveState> {
     if (this.isContinue) {
       const loaded = await this.loadGameFromElectron();
       if (loaded) return loaded;
     }
-    return this.createAndSaveNewHash();
+    return this.createAndSaveNewState();
   }
 
-  private async loadGameFromElectron(): Promise<string | null> {
+  private async loadGameFromElectron(): Promise<SaveState | null> {
     // @ts-ignore
     if (typeof require === 'undefined') return null;
     try {
       const { ipcRenderer } = require('electron');
       const result = await ipcRenderer.invoke('load-game');
       if (result?.success && result.data?.mapHash) {
-        console.log('기존 맵 해시 자동 로드 성공(Electron):', result.data.mapHash);
-        return result.data.mapHash;
+        console.log('세이브 로드 성공(Electron):', result.data);
+        return result.data as SaveState;
       }
     } catch {
-      console.warn('Electron 로드 실패, 새 해시 생성 대기');
+      console.warn('Electron 로드 실패, 새 상태 생성');
     }
     return null;
   }
 
-  private async createAndSaveNewHash(): Promise<string> {
+  private async createAndSaveNewState(): Promise<SaveState> {
     const mapHash = `stage_${Date.now()}_${Math.floor(Math.random() * 999999)}`;
     console.log('새로운 맵 해시 생성됨:', mapHash);
+    const base = this.character;
+    const state: SaveState = {
+      mapHash,
+      playerGold:    50,
+      playerHp:      base?.hp      ?? 100,
+      playerMaxHp:   base?.hp      ?? 100,
+      playerAtk:     base?.atk     ?? 0,
+      playerDef:     base?.def     ?? 0,
+      playerCrit:    base?.crit    ?? 0,
+      playerCritDmg: base?.critDmg ?? 1.5,
+      characterId:   base?.id,
+    };
+    await this.saveToElectron(state);
+    return state;
+  }
 
+  /** 현재 플레이어 상태를 Electron에 저장 */
+  private async saveGameState() {
+    const state: SaveState = {
+      mapHash:       this.mapHash,
+      currentNodeId: this.currentNodeId,
+      playerGold:    this.playerGold,
+      playerHp:      this.playerHp,
+      playerMaxHp:   this.playerMaxHp,
+      playerAtk:     this.playerAtk,
+      playerDef:     this.playerDef,
+      playerCrit:    this.playerCrit,
+      playerCritDmg: this.playerCritDmg,
+      characterId:   this.character?.id,
+      deck:          this.playerDeck.map(e => ({ cardId: e.card.id, count: e.count })),
+      equipment:     this.playerEquipment,
+      maxEquipSlots: this.maxEquipSlots,
+    };
+    await this.saveToElectron(state);
+  }
+
+  private async saveToElectron(state: SaveState) {
+    // @ts-ignore
+    if (typeof require === 'undefined') return;
+    try {
+      const { ipcRenderer } = require('electron');
+      await ipcRenderer.invoke('save-game', state);
+    } catch (e) {
+      console.warn('Electron 세이브 실패', e);
+    }
+  }
+
+  /** 게임 오버: 세이브 파일 삭제 후 인트로로 복귀 */
+  private async clearSaveAndReturn() {
     // @ts-ignore
     if (typeof require !== 'undefined') {
       try {
         const { ipcRenderer } = require('electron');
-        await ipcRenderer.invoke('save-game', { mapHash });
-      } catch (e) {
-        console.warn('Electron 세이브 실패', e);
-      }
+        // 빈 상태로 덮어써서 세이브 초기화
+        await ipcRenderer.invoke('save-game', {});
+      } catch {}
     }
-    return mapHash;
+    this.scene.start('IntroScene');
+  }
+
+  /** 게임 오버 / 클리어 시 영구 기록 저장 (골드·장비는 런이 끝나도 보존) */
+  private async saveLegacyData(reachedLayer: number) {
+    // @ts-ignore
+    if (typeof require === 'undefined') return;
+    try {
+      const { ipcRenderer } = require('electron');
+      await ipcRenderer.invoke('save-legacy', {
+        date:      new Date().toISOString(),
+        gold:      this.playerGold,
+        equipment: [...this.playerEquipment],
+        reached:   reachedLayer,
+        character: this.character?.id ?? 'unknown',
+      });
+    } catch (e) {
+      console.warn('Legacy 저장 실패', e);
+    }
   }
 
   /** 노드 간 경로 그리기 — 베지어 곡선 점선 (고정 스타일, 배치 최적화) */
@@ -254,7 +400,7 @@ export default class MainScene extends Phaser.Scene {
         return;
       }
 
-      const frameName = this.getNodeFrameName(node.type);
+      const frameName = getNodeFrameName(node.type);
       const sprite    = this.add.sprite(node.x, node.y, 'map_nodes', frameName);
       sprite.setScale(NODE_SCALE_DEFAULT).setDepth(6);
       sprite.setInteractive({ useHandCursor: true });
@@ -290,7 +436,7 @@ export default class MainScene extends Phaser.Scene {
         if (!currentNode) return;
 
         if (currentNode.nextNodes.includes(node.id)) {
-          this.movePlayer(node.x, node.y);
+          this.movePlayer(node.x, node.y, node);
           this.currentNodeId = node.id;
           this.updateNodesVisibility(allNodes, nodeSpritesMap, true);
         }
@@ -317,18 +463,58 @@ export default class MainScene extends Phaser.Scene {
   // 덱 패널
   // ─────────────────────────────────────────────────────────────────────────────
 
+  /** 초기 덱 구성: 일반 공격×4 + 수비×3 + 포션×3 + 속성 1성 각×3 = 25장 */
+  private buildInitialDeck() {
+    // Normal cards: id 25=공격, 26=수비, 29=포션
+    // Elemental 1-star: id 0=water, 5=fire, 10=grass, 15=lightning, 20=earth
+    this.playerDeck = [
+      { card: CARD_DATA_LIST[25], count: 4 },
+      { card: CARD_DATA_LIST[26], count: 3 },
+      { card: CARD_DATA_LIST[29], count: 3 },
+      { card: CARD_DATA_LIST[0],  count: 3 },
+      { card: CARD_DATA_LIST[5],  count: 3 },
+      { card: CARD_DATA_LIST[10], count: 3 },
+      { card: CARD_DATA_LIST[15], count: 3 },
+      { card: CARD_DATA_LIST[20], count: 3 },
+    ];
+  }
+
+  /** 캐릭터 idle 애니메이션이 없으면 생성 (씬 전환 후 유실 방지) */
+  private ensureCharAnimations() {
+    const chars: Array<{ weapon: WeaponType; frames: number }> = [
+      { weapon: 'swordShield', frames: CHAR_FRAME_COUNT.swordShield },
+      { weapon: 'bow',         frames: CHAR_FRAME_COUNT.bow         },
+      { weapon: 'greatsword',  frames: CHAR_FRAME_COUNT.greatsword  },
+      { weapon: 'hammer',      frames: CHAR_FRAME_COUNT.hammer      },
+      { weapon: 'spear',       frames: CHAR_FRAME_COUNT.spear       },
+    ];
+    chars.forEach(({ weapon, frames }) => {
+      const key = `char_idle_${weapon}`;
+      if (!this.anims.exists(key)) {
+        this.anims.create({
+          key,
+          frames:    this.anims.generateFrameNumbers(CHAR_SPRITE_KEY[weapon], { start: 0, end: frames - 1 }),
+          frameRate: 8,
+          repeat:    -1,
+        });
+      }
+    });
+  }
+
   private createDeckWindow(width: number, height: number) {
-    // UI 카메라(zoom=1)로 렌더링 → 스크린 좌표 그대로 사용, zoom 보정 불필요
     const panelW  = width;
     const panelH  = height - DECK_PANEL_HANDLE_H;
     const handleX = (panelW - DECK_PANEL_HANDLE_W) / 2;
     const handleY = 0;
+    const leftW   = Math.floor(panelW * 0.38);
+    const rightX  = leftW + 1;
+    const rightW  = panelW - rightX;
+    const topY    = DECK_PANEL_HANDLE_H + 10;
 
-    // 초기 위치: 화면 하단 (핸들만 노출된 닫힌 상태)
     this.deckWindowContainer = this.add.container(0, height - DECK_PANEL_HANDLE_H);
     this.deckWindowContainer.setDepth(50);
 
-    // 핸들 배경
+    // ── 핸들 ──────────────────────────────────────────────────────────────────
     const handleGraphics = this.add.graphics();
     this.drawHandleGraphics(handleGraphics, handleX, handleY, DECK_COLOR_GOLD);
 
@@ -347,50 +533,207 @@ export default class MainScene extends Phaser.Scene {
       DECK_PANEL_HANDLE_H,
     ).setInteractive({ useHandCursor: true });
 
-    // 패널 본체
+    // ── 패널 배경 ─────────────────────────────────────────────────────────────
     const panelBg = this.add.graphics();
-    panelBg.fillStyle(DECK_COLOR_BG, 0.95);
+    panelBg.fillStyle(DECK_COLOR_BG, 0.97);
     panelBg.lineStyle(2, DECK_COLOR_GOLD, 1);
     panelBg.fillRoundedRect(0, DECK_PANEL_HANDLE_H, panelW, panelH, PANEL_RADIUS);
     panelBg.strokeRoundedRect(0, DECK_PANEL_HANDLE_H, panelW, panelH, PANEL_RADIUS);
+    panelBg.lineStyle(1, 0x444444, 1);
+    panelBg.lineBetween(leftW, DECK_PANEL_HANDLE_H + 12, leftW, height - 12);
 
-    // 맵 터치 방지 투명 영역
     const panelBlockZone = this.add
       .zone(panelW / 2, DECK_PANEL_HANDLE_H + panelH / 2, panelW, panelH)
       .setInteractive();
 
-    // 좌측: 캐릭터 정보
-    const leftW      = panelW * 0.4;
-    const leftTitle  = this.add.text(leftW / 2, DECK_PANEL_HANDLE_H + 25, i18n.t('charInfo'), {
-      fontFamily: 'SBAggroB', fontSize: '16px', color: '#d4af37',
+    // ─────────────────────────────────────────────────────────────────────────
+    // 왼쪽: 캐릭터 정보
+    // ─────────────────────────────────────────────────────────────────────────
+    const char = this.character;
+
+    const leftTitleTxt = this.add.text(leftW / 2, topY, i18n.t('charInfo'), {
+      fontFamily: 'SBAggroB', fontSize: '14px', color: '#d4af37',
     }).setOrigin(0.5);
-    const leftContent = this.add.text(20, DECK_PANEL_HANDLE_H + 55,
-      '• HP: 100/100\n• MP: 50/50\n• 공격력: 15\n• 방어력: 5\n\n(캐릭터 이미지)',
-      { fontFamily: 'SBAggroM', fontSize: '14px', color: '#e6d8b8', lineSpacing: 10 },
+
+    // 캐릭터 정적 이미지
+    const CHAR_IMG_KEY: Record<string, string> = {
+      swordShield: 'char_img_shield',
+      bow:         'char_img_bow',
+      greatsword:  'char_img_sword',
+      hammer:      'char_img_hammer',
+      spear:       'char_img_spear',
+    };
+    // 이미지 높이: 이름 + 스탯 5행이 잘리지 않도록 제한
+    const STAT_ROW_MIN_H = 44;
+    const NAME_H         = 22;
+    const charImgH = Math.min(
+      Math.floor(panelH * 0.38),
+      height - topY - NAME_H * 2 - STAT_ROW_MIN_H * 5 - 20,
     );
+    const charImgY = topY + 16 + charImgH / 2;
 
-    // 중앙 구분선
-    panelBg.lineStyle(1, 0x666666, 1);
-    panelBg.lineBetween(leftW, DECK_PANEL_HANDLE_H + 20, leftW, DECK_PANEL_HANDLE_H + panelH - 20);
+    let charImg: Phaser.GameObjects.Image | null = null;
+    if (char) {
+      const imgKey = CHAR_IMG_KEY[char.weapon];
+      charImg = this.add.image(leftW / 2, charImgY, imgKey);
+      const src = charImg.texture.source[0];
+      if (src) {
+        const scale = Math.min(charImgH / src.height, (leftW * 0.80) / src.width);
+        charImg.setScale(scale);
+      }
+    }
 
-    // 우측: 덱 카드 목록
-    const rightW      = panelW * 0.6;
-    const rightTitle  = this.add.text(leftW + rightW / 2, DECK_PANEL_HANDLE_H + 25, i18n.t('deckList'), {
-      fontFamily: 'SBAggroB', fontSize: '16px', color: '#d4af37',
+    // ── 장비 슬롯 오버레이 (이미지 좌측 상단 정사각형) ──────────────────────
+    const SLOT_SIZE = 34;
+    const SLOT_GAP  = 5;
+    const SLOT_X0   = 10;
+    const SLOT_Y0   = topY + 18;
+    const equipG    = this.add.graphics();
+    const equipTexts: Phaser.GameObjects.Text[] = [];
+
+    for (let s = 0; s < this.maxEquipSlots; s++) {
+      const sx    = SLOT_X0 + s * (SLOT_SIZE + SLOT_GAP);
+      const sy    = SLOT_Y0;
+      const item  = this.playerEquipment[s];
+      const empty = item == null;
+
+      equipG.fillStyle(empty ? 0x0d1117 : 0x1a3a1a, 0.85);
+      equipG.lineStyle(2, empty ? 0x445566 : DECK_COLOR_GOLD, empty ? 0.5 : 1);
+      equipG.fillRoundedRect(sx, sy, SLOT_SIZE, SLOT_SIZE, 5);
+      equipG.strokeRoundedRect(sx, sy, SLOT_SIZE, SLOT_SIZE, 5);
+
+      if (empty) {
+        // 빈 슬롯: 중앙 + 기호
+        equipTexts.push(
+          this.add.text(sx + SLOT_SIZE / 2, sy + SLOT_SIZE / 2, '+', {
+            fontFamily: 'SBAggroM', fontSize: '16px', color: '#445566',
+          }).setOrigin(0.5),
+        );
+      } else {
+        // 장비 있음: 이름 첫 글자 축약 표시
+        const abbr = item.replace(/[^가-힣a-zA-Z]/g, '').slice(0, 2);
+        equipTexts.push(
+          this.add.text(sx + SLOT_SIZE / 2, sy + SLOT_SIZE / 2, abbr, {
+            fontFamily: 'SBAggroB', fontSize: '11px', color: '#d4af37',
+            wordWrap: { width: SLOT_SIZE - 4 }, align: 'center',
+          }).setOrigin(0.5),
+        );
+      }
+    }
+
+    // 캐릭터 이름
+    const accentColor = char ? WEAPON_COLORS[char.weapon].accent : '#888888';
+    const charNameTxt = this.add.text(leftW / 2, topY + 20 + charImgH, char ? i18n.t(char.nameKey) : '---', {
+      fontFamily: 'SBAggroB', fontSize: '13px', color: accentColor,
     }).setOrigin(0.5);
-    const rightContent = this.add.text(leftW + 20, DECK_PANEL_HANDLE_H + 55,
-      '[보유 카드 목록]\n\n• 일반 타격 (비용 1, 피해 6)\n• 일반 방어 (비용 1, 방어도 5)\n• 찌르기 (비용 1, 피해 9)\n• 불꽃 송곳니 (비용 2, 피해 12)\n\n* 실제 덱 정보가 연동될 예정입니다.',
-      { fontFamily: 'SBAggroM', fontSize: '14px', color: '#e6d8b8', wordWrap: { width: rightW - 40 }, lineSpacing: 8 },
-    );
 
-    this.deckWindowContainer.add([
+    // 스탯 바 영역
+    type StatKey = 'hp' | 'def' | 'atk' | 'crit' | 'critDmg';
+    const STAT_ROWS: Array<{ key: StatKey; label: string; fmt: (v: number) => string }> = [
+      { key: 'hp',      label: i18n.t('statHp'),     fmt: v => `${v}` },
+      { key: 'def',     label: i18n.t('statDef'),    fmt: v => `${v}` },
+      { key: 'atk',     label: i18n.t('statAtk'),    fmt: v => `${v}` },
+      { key: 'crit',    label: i18n.t('statCrit'),   fmt: v => `${v}%` },
+      { key: 'critDmg', label: i18n.t('statCritDmg'),fmt: v => `×${v}` },
+    ];
+    const STAT_MAX: Record<StatKey, number> = { hp: 200, def: 50, atk: 100, crit: 100, critDmg: 2.5 };
+
+    const statAreaY = topY + 34 + charImgH;
+    const rowH      = (height - 10 - statAreaY) / STAT_ROWS.length;
+    const barX      = leftW * 0.34;
+    const barW      = leftW * 0.46;
+    const barH      = Math.max(Math.floor(rowH * 0.30), 6);
+    const charCol   = char ? WEAPON_COLORS[char.weapon].card : 0x888888;
+
+    const statG = this.add.graphics();
+    const statTexts: Phaser.GameObjects.Text[] = [];
+
+    const liveStats: Record<string, number> = {
+      hp:      this.playerHp,
+      def:     this.playerDef,
+      atk:     this.playerAtk,
+      crit:    this.playerCrit,
+      critDmg: this.playerCritDmg,
+    };
+
+    STAT_ROWS.forEach(({ key, label, fmt }, i) => {
+      const cy    = statAreaY + i * rowH + rowH / 2;
+      const val   = liveStats[key] ?? 0;
+      const ratio = Math.min(val / STAT_MAX[key], 1);
+
+      statG.fillStyle(0x2a2a3a, 1);
+      statG.fillRoundedRect(barX, cy - barH / 2, barW, barH, 3);
+      statG.fillStyle(charCol, 1);
+      statG.fillRoundedRect(barX, cy - barH / 2, barW * ratio, barH, 3);
+
+      statTexts.push(
+        this.add.text(8, cy, label, {
+          fontFamily: 'SBAggroM', fontSize: '12px', color: '#888888',
+        }).setOrigin(0, 0.5),
+        this.add.text(barX + barW + 5, cy, fmt(val), {
+          fontFamily: 'SBAggroM', fontSize: '12px', color: '#d8c8a8',
+        }).setOrigin(0, 0.5),
+      );
+    });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 오른쪽: 카드 이미지 목록 (10개 × n행)
+    // ─────────────────────────────────────────────────────────────────────────
+    const CARDS_PER_ROW = 10;
+    const cardGap       = 6;
+    const cardScale     = (rightW - cardGap * (CARDS_PER_ROW + 1)) / (CARDS_PER_ROW * CARD_WIDTH);
+    const scaledW       = CARD_WIDTH  * cardScale;
+    const scaledH       = CARD_HEIGHT * cardScale;
+    const cardAreaStartY = topY + 24;
+
+    const totalCards   = this.playerDeck.reduce((s, e) => s + e.count, 0);
+    const deckTitleTxt = this.add.text(
+      rightX + rightW / 2, topY,
+      `${i18n.t('deckList')}  (${totalCards}장)`,
+      { fontFamily: 'SBAggroB', fontSize: '14px', color: '#d4af37' },
+    ).setOrigin(0.5);
+
+    const deckCards: Card[] = [];
+    let cardIdx = 0;
+    for (const entry of this.playerDeck) {
+      for (let c = 0; c < entry.count; c++) {
+        const col = cardIdx % CARDS_PER_ROW;
+        const row = Math.floor(cardIdx / CARDS_PER_ROW);
+        const cx  = rightX + cardGap + col * (scaledW + cardGap);
+        const cy  = cardAreaStartY + row * (scaledH + cardGap);
+
+        const card = new Card(this, cx, cy, entry.card);
+        card.setScale(cardScale);
+        card.setInteractive(
+          new Phaser.Geom.Rectangle(0, 0, CARD_WIDTH, CARD_HEIGHT),
+          Phaser.Geom.Rectangle.Contains,
+        );
+
+        card.on('pointerover', () => {
+          this.deckWindowContainer.bringToTop(card);
+          this.tweens.add({ targets: card, scaleX: cardScale * 1.18, scaleY: cardScale * 1.18, duration: 110, ease: 'Sine.easeOut' });
+        });
+        card.on('pointerout', () => {
+          this.tweens.add({ targets: card, scaleX: cardScale, scaleY: cardScale, duration: 110, ease: 'Sine.easeOut' });
+        });
+
+        deckCards.push(card);
+        cardIdx++;
+      }
+    }
+
+    // ── 컨테이너 조립 ─────────────────────────────────────────────────────────
+    const items: Phaser.GameObjects.GameObject[] = [
       panelBg, panelBlockZone,
       handleGraphics, handleText, handleZone,
-      leftTitle, leftContent,
-      rightTitle, rightContent,
-    ]);
+      leftTitleTxt, charNameTxt, statG, ...statTexts,
+      equipG, ...equipTexts,
+      deckTitleTxt, ...deckCards,
+    ];
+    if (charImg) items.push(charImg);
+    this.deckWindowContainer.add(items);
 
-    // 패널 토글 애니메이션 — container.y를 스크린 좌표로 직접 트윈
+    // ── 토글 ──────────────────────────────────────────────────────────────────
     let isPanelOpen = false;
     const closedY   = height - DECK_PANEL_HANDLE_H;
     const openY     = 0;
@@ -569,7 +912,7 @@ export default class MainScene extends Phaser.Scene {
   // 플레이어 이동
   // ─────────────────────────────────────────────────────────────────────────────
 
-  private movePlayer(targetX: number, targetY: number) {
+  private movePlayer(targetX: number, targetY: number, targetNode?: MapNode) {
     if (!this.playerToken) return;
     this.isMoving = true;
     this.tweens.killTweensOf(this.playerToken);
@@ -612,6 +955,9 @@ export default class MainScene extends Phaser.Scene {
                 this.playerToken.setScale(TOKEN_SCALE_IDLE);
                 cam.startFollow(this.playerToken, true, 0.1, 0.1);
                 this.isMoving = false;
+                if (targetNode && targetNode.layer > 0) {
+                  this.triggerNodeEvent(targetNode);
+                }
               },
             });
           },
@@ -623,21 +969,6 @@ export default class MainScene extends Phaser.Scene {
   // ─────────────────────────────────────────────────────────────────────────────
   // 맵 생성 (시드 기반)
   // ─────────────────────────────────────────────────────────────────────────────
-
-  /**
-   * 노드 type → 스프라이트 프레임 이름 변환
-   *
-   * type  0~ 4 : row0_0~4  (일반 아이콘 1행, 5개)
-   * type  5~ 9 : row1_0~4  (일반 아이콘 2행, 5개)
-   * type 10~12 : row2_0~2  (보스 1단계, 3개)
-   * type 13~14 : row3_0~1  (보스 2단계, 2개 – row3_3 최종 보스는 맵 생성에서 제외)
-   */
-  private getNodeFrameName(type: number): string {
-    if (type < 5)  return `row0_${type}`;
-    if (type < 10) return `row1_${type - 5}`;
-    if (type < 13) return `row2_${type - 10}`;  // row2_0, row2_1, row2_2
-    return `row3_${type - 13}`;                  // row3_0, row3_1
-  }
 
   /** 해시 기반 LCG 시드 난수 생성기 반환 */
   private buildSeededRandom(hash: string) {
@@ -671,12 +1002,56 @@ export default class MainScene extends Phaser.Scene {
       const spacingX = width / (numNodes + 1);
       const nodes: MapNode[] = [];
 
+      // 레이어 그룹 결정
+      // - 마지막 레이어: 보스
+      // - 2-노드 레이어: 전투(A) 1개 + 그룹B 또는 C 1개 (위치 랜덤, 중복 불가)
+      // - 3-노드 레이어: 그룹 A/B/C 중 랜덤 (같은 그룹, 같은 행 내 타입 중복 불가)
+      const isBossLayer    = layer === MAP_NUM_LAYERS - 1;
+      const isTwoNodeMixed = !isEdgeLayer(layer) && numNodes === 2;
+      const layerGroup = layer === 0      ? null
+                       : isBossLayer      ? BOSS_NODE_TYPES
+                       : isTwoNodeMixed   ? null  // 개별 처리
+                       : NODE_TYPE_GROUPS[randInt(0, NODE_TYPE_GROUPS.length - 1)];
+
+      // 2-노드 레이어: 반드시 전투 1개 + 비전투(B/C) 1개, 순서 랜덤
+      let mixedTypes: number[] | null = null;
+      if (isTwoNodeMixed) {
+        const battleGroup   = NODE_TYPE_GROUPS[0];
+        const otherGroupIdx = randInt(1, NODE_TYPE_GROUPS.length - 1);
+        const otherGroup    = NODE_TYPE_GROUPS[otherGroupIdx];
+        const battleType    = battleGroup[randInt(0, battleGroup.length - 1)];
+        const otherType     = otherGroup[randInt(0, otherGroup.length - 1)];
+        mixedTypes = randInt(0, 1) === 0 ? [battleType, otherType] : [otherType, battleType];
+      }
+
+      // 3-노드 동일 그룹: 행 내 중복 없도록 셔플 후 순서대로 배정
+      // 그룹 크기 < numNodes 이면 두 번 채워서 앞에서부터 사용
+      let uniqueGroupTypes: number[] | null = null;
+      if (layerGroup && !isBossLayer) {
+        const pool = [...layerGroup];
+        // seeded Fisher-Yates shuffle
+        for (let j = pool.length - 1; j > 0; j--) {
+          const k = Math.floor(random() * (j + 1));
+          [pool[j], pool[k]] = [pool[k], pool[j]];
+        }
+        // 부족하면 다시 셔플해서 보충 (그룹 A처럼 원소 수 < numNodes 인 경우)
+        while (pool.length < numNodes) {
+          const extra = [...layerGroup];
+          for (let j = extra.length - 1; j > 0; j--) {
+            const k = Math.floor(random() * (j + 1));
+            [extra[j], extra[k]] = [extra[k], extra[j]];
+          }
+          pool.push(...extra);
+        }
+        uniqueGroupTypes = pool.slice(0, numNodes);
+      }
+
       for (let i = 0; i < numNodes; i++) {
         let nodeType: number;
-        if (layer === 0)                       nodeType = 0;
-        // 마지막 레이어: 보스 타입 10~14 (row2_0~2, row3_0~1); row3_3(최종 보스)은 제외
-        else if (layer === MAP_NUM_LAYERS - 1) nodeType = randInt(10, 14);
-        else                                   nodeType = randInt(0, 9);
+        if (layer === 0)             nodeType = 0;
+        else if (mixedTypes)         nodeType = mixedTypes[i];
+        else if (uniqueGroupTypes)   nodeType = uniqueGroupTypes[i];
+        else                         nodeType = layerGroup![randInt(0, layerGroup!.length - 1)];
 
         nodes.push({
           id: nodeId++,
@@ -740,5 +1115,59 @@ export default class MainScene extends Phaser.Scene {
     }
 
     return mapLayersData;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 노드 이벤트 트리거
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  private triggerNodeEvent(node: MapNode) {
+    this.isPaused = true;
+    this.scene.pause();
+    this.scene.launch('NodeEventScene', {
+      nodeType:        node.type,
+      mapElement:      'water',
+      nodeId:          node.id,
+      playerGold:      this.playerGold,
+      playerHp:        this.playerHp,
+      playerMaxHp:     this.playerMaxHp,
+      playerAtk:       this.playerAtk,
+      playerDef:       this.playerDef,
+      playerCrit:      this.playerCrit,
+      playerCritDmg:   this.playerCritDmg,
+      playerEquipment: [...this.playerEquipment],
+      maxEquipSlots:   this.maxEquipSlots,
+    });
+
+    this.game.events.once('nodeEventComplete', (result: Record<string, unknown>) => {
+      if (typeof result.goldDelta    === 'number') this.playerGold    = Math.max(0, this.playerGold + result.goldDelta);
+      if (typeof result.hpDelta      === 'number') this.playerHp      = Math.max(0, Math.min(this.playerMaxHp, this.playerHp + result.hpDelta));
+      if (typeof result.maxHpDelta   === 'number') this.playerMaxHp   = Math.max(1, this.playerMaxHp + result.maxHpDelta);
+      if (typeof result.atkDelta     === 'number') this.playerAtk     = Math.max(0, this.playerAtk + result.atkDelta);
+      if (typeof result.defDelta     === 'number') this.playerDef     = Math.max(0, this.playerDef + result.defDelta);
+      if (typeof result.critDelta    === 'number') this.playerCrit    = Math.min(100, Math.max(0, this.playerCrit + result.critDelta));
+      if (typeof result.critDmgDelta === 'number') this.playerCritDmg = Math.max(1, this.playerCritDmg + result.critDmgDelta);
+      if (typeof result.equipment === 'string') {
+        const newEquip   = result.equipment as string;
+        const replaceOld = result.replaceEquipment as string | undefined;
+        if (replaceOld) {
+          const idx = this.playerEquipment.indexOf(replaceOld);
+          if (idx >= 0) this.playerEquipment[idx] = newEquip;
+        } else if (this.playerEquipment.length < this.maxEquipSlots) {
+          this.playerEquipment.push(newEquip);
+        }
+      }
+
+      // 게임 오버 체크
+      if (this.playerHp <= 0) {
+        this.saveLegacyData(node.layer).then(() => {
+          this.clearSaveAndReturn();
+        });
+        return;
+      }
+
+      this.saveGameState();
+      this.isPaused = false;
+    });
   }
 }
