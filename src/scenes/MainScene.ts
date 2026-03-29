@@ -5,6 +5,7 @@ import { CharacterDef, WeaponType, CHAR_SPRITE_KEY, CHAR_FRAME_COUNT, WEAPON_COL
 import { CARD_DATA_LIST } from '@src/data/cardData';
 import type { CardData } from '@src/data/cardData';
 import Card, { CARD_WIDTH, CARD_HEIGHT } from '@src/objects/Card';
+import { getEquipmentById, EQUIP_GRADE_COLOR } from '@src/data/equipmentData';
 
 interface DeckEntry { card: CardData; count: number; }
 
@@ -18,6 +19,8 @@ interface SaveState {
   playerDef?: number;
   playerCrit?: number;
   playerCritDmg?: number;
+  playerCardMult?: number;
+  playerShieldMult?: number;
   characterId?: string;
   deck?: { cardId: number; count: number }[];
   equipment?: string[];
@@ -46,8 +49,9 @@ const NODE_SCALE_HOVER    = 0.9;
 const NODE_SCALE_PASSED   = 0.6;
 const NODE_SCALE_INACTIVE = 0.7;
 
-const TOKEN_SCALE_IDLE = 0.4;
-const TOKEN_SCALE_LIFT = 0.6;
+const TOKEN_SCALE_IDLE = 1.0;
+const TOKEN_SCALE_LIFT = 1.25;
+const TOKEN_RADIUS     = 11;   // 플레이어 토큰 원 반지름(px)
 
 // ─── 인터페이스 ───────────────────────────────────────────────────────────────
 
@@ -74,21 +78,24 @@ export default class MainScene extends Phaser.Scene {
   private character?: CharacterDef;
   private playerDeck: DeckEntry[] = [];
   // ── 플레이어 스탯 ─────────────────────────────────────────────────────────
-  private playerGold      = 50;
-  private playerHp        = 100;
-  private playerMaxHp     = 100;
-  private playerAtk       = 0;
-  private playerDef       = 0;
-  private playerCrit      = 0;
-  private playerCritDmg   = 1.5;
+  private playerGold       = 50;
+  private playerHp         = 100;
+  private playerMaxHp      = 100;
+  private playerAtk        = 0;
+  private playerDef        = 0;
+  private playerCrit       = 0;
+  private playerCritDmg    = 1.5;
+  private playerCardMult   = 1.0; // 카드 전체 공격/방어 배율 (하트 이벤트)
+  private playerShieldMult = 1.0; // 방어 카드 쉴드 배율 (방어 이벤트)
   private playerEquipment: string[] = [];
-  private maxEquipSlots   = 1;
-  private mapHash         = '';
+  private maxEquipSlots    = 1;
+  private mapHash          = '';
 
   // ── 게임 오브젝트 참조 ────────────────────────────────────────────────────────
-  private playerToken!: Phaser.GameObjects.Sprite;
+  private playerToken!: Phaser.GameObjects.Arc;
   private pauseMenuContainer!: Phaser.GameObjects.Container;
   private deckWindowContainer!: Phaser.GameObjects.Container;
+  private uiCam!: Phaser.Cameras.Scene2D.Camera;
   private activePathsGraphics!: Phaser.GameObjects.Graphics;
   private fpsTxt?: Phaser.GameObjects.Text;
 
@@ -101,9 +108,12 @@ export default class MainScene extends Phaser.Scene {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /** CharacterSelectScene에서 전달된 data를 받습니다 */
-  init(data: { isContinue?: boolean; character?: CharacterDef }) {
+  init(data: { isContinue?: boolean; character?: CharacterDef; startEquipment?: string[] }) {
     this.isContinue = data?.isContinue ?? false;
     this.character  = data?.character;
+    if (data?.startEquipment && data.startEquipment.length > 0) {
+      this.playerEquipment = [...data.startEquipment];
+    }
   }
 
   async create() {
@@ -127,8 +137,10 @@ export default class MainScene extends Phaser.Scene {
     this.playerDef     = state.playerDef     ?? (base?.def     ?? 0);
     this.playerCrit      = state.playerCrit    ?? (base?.crit    ?? 0);
     this.playerCritDmg   = state.playerCritDmg ?? (base?.critDmg ?? 1.5);
-    this.playerEquipment = state.equipment     ?? [];
-    this.maxEquipSlots   = state.maxEquipSlots ?? 1;
+    this.playerEquipment  = state.equipment      ?? [];
+    this.maxEquipSlots    = state.maxEquipSlots  ?? 1;
+    this.playerCardMult   = state.playerCardMult   ?? 1.0;
+    this.playerShieldMult = state.playerShieldMult ?? 1.0;
 
     const mapLayersData = this.generateMapData(this.mapHash, mapWorldWidth, MAP_WORLD_HEIGHT);
     const allNodes      = mapLayersData.flat();
@@ -162,8 +174,8 @@ export default class MainScene extends Phaser.Scene {
     const overlayContainer = this.createScreenOverlay(width, height);
 
     // UI 카메라: zoom=1, scroll=0 → 스크린 좌표 = 월드 좌표 (완전 고정)
-    const uiCam = this.cameras.add(0, 0, width, height).setZoom(1);
-    uiCam.ignore(worldObjects);
+    this.uiCam = this.cameras.add(0, 0, width, height).setZoom(1);
+    this.uiCam.ignore(worldObjects);
     this.cameras.main.ignore(this.deckWindowContainer);
     this.cameras.main.ignore(overlayContainer);
 
@@ -304,9 +316,11 @@ export default class MainScene extends Phaser.Scene {
       playerCrit:    this.playerCrit,
       playerCritDmg: this.playerCritDmg,
       characterId:   this.character?.id,
-      deck:          this.playerDeck.map(e => ({ cardId: e.card.id, count: e.count })),
-      equipment:     this.playerEquipment,
-      maxEquipSlots: this.maxEquipSlots,
+      deck:             this.playerDeck.map(e => ({ cardId: e.card.id, count: e.count })),
+      equipment:        this.playerEquipment,
+      maxEquipSlots:    this.maxEquipSlots,
+      playerCardMult:   this.playerCardMult,
+      playerShieldMult: this.playerShieldMult,
     };
     await this.saveToElectron(state);
   }
@@ -446,9 +460,9 @@ export default class MainScene extends Phaser.Scene {
   }
 
   private createPlayerToken(startNode: MapNode) {
-    this.playerToken = this.add.sprite(startNode.x, startNode.y, 'map_nodes', 'row4_0');
-    this.playerToken.setScale(TOKEN_SCALE_IDLE);
-    this.playerToken.setOrigin(0.5, 0.5);
+    // 외곽 흰 테두리 원 + 안쪽 골드 원으로 구성된 마커
+    this.playerToken = this.add.circle(startNode.x, startNode.y, TOKEN_RADIUS, 0xd4af37);
+    this.playerToken.setStrokeStyle(2.5, 0xffffff, 1);
     this.playerToken.setDepth(10);
     this.cameras.main.startFollow(this.playerToken, true, 0.1, 0.1);
   }
@@ -610,11 +624,13 @@ export default class MainScene extends Phaser.Scene {
           }).setOrigin(0.5),
         );
       } else {
-        // 장비 있음: 이름 첫 글자 축약 표시
-        const abbr = item.replace(/[^가-힣a-zA-Z]/g, '').slice(0, 2);
+        // 장비 있음: ID → 이름 조회 후 2글자 축약 + 등급색 표시
+        const equip = getEquipmentById(item);
+        const abbr  = (equip?.name ?? item).replace(/[^가-힣a-zA-Z]/g, '').slice(0, 2);
+        const color = equip ? EQUIP_GRADE_COLOR[equip.grade] : '#d4af37';
         equipTexts.push(
           this.add.text(sx + SLOT_SIZE / 2, sy + SLOT_SIZE / 2, abbr, {
-            fontFamily: 'SBAggroB', fontSize: '11px', color: '#d4af37',
+            fontFamily: 'SBAggroB', fontSize: '11px', color,
             wordWrap: { width: SLOT_SIZE - 4 }, align: 'center',
           }).setOrigin(0.5),
         );
@@ -623,7 +639,7 @@ export default class MainScene extends Phaser.Scene {
 
     // 캐릭터 이름
     const accentColor = char ? WEAPON_COLORS[char.weapon].accent : '#888888';
-    const charNameTxt = this.add.text(leftW / 2, topY + 20 + charImgH, char ? i18n.t(char.nameKey) : '---', {
+    const charNameTxt = this.add.text(leftW / 2, topY + 30 + charImgH, char ? i18n.t(char.nameKey) : '---', {
       fontFamily: 'SBAggroB', fontSize: '13px', color: accentColor,
     }).setOrigin(0.5);
 
@@ -956,7 +972,9 @@ export default class MainScene extends Phaser.Scene {
                 cam.startFollow(this.playerToken, true, 0.1, 0.1);
                 this.isMoving = false;
                 if (targetNode && targetNode.layer > 0) {
-                  this.triggerNodeEvent(targetNode);
+                  // tween 콜백 내에서 scene.pause() 호출 시 Phaser 내부 상태 충돌 방지 —
+                  // 다음 틱으로 미뤄서 TweenManager 처리 루프가 완료된 후 실행
+                  this.time.delayedCall(1, () => this.triggerNodeEvent(targetNode));
                 }
               },
             });
@@ -995,6 +1013,47 @@ export default class MainScene extends Phaser.Scene {
     const layerSpacingY = (height - 600) / (MAP_NUM_LAYERS - 1);
     const isEdgeLayer   = (l: number) => l === 0 || l === MAP_NUM_LAYERS - 1;
 
+    // ── 중간 레이어 행 그룹 사전 결정 ──────────────────────────────────────────
+    // 레이어 1 ~ MAP_NUM_LAYERS-2 를 2개씩 묶어 페어링.
+    // 각 페어에서 한 행은 반드시 전투(그룹A), 나머지 한 행은 비전투(그룹B or C).
+    // 페어 내 순서(어느 레이어가 전투인지)는 seeded 랜덤.
+    const intermediateLayers = MAP_NUM_LAYERS - 2; // 레이어 1..MAP_NUM_LAYERS-2
+    const layerGroupAssign: Array<number[]> = new Array(MAP_NUM_LAYERS);
+    const battleGroup  = NODE_TYPE_GROUPS[0];
+    const nonBattleGroups = NODE_TYPE_GROUPS.slice(1);
+
+    for (let pair = 0; pair < Math.ceil(intermediateLayers / 2); pair++) {
+      const la = 1 + pair * 2;
+      const lb = la + 1;
+      // 이 페어의 비전투 그룹 (B 또는 C 중 랜덤)
+      const nbGroup = nonBattleGroups[randInt(0, nonBattleGroups.length - 1)];
+      // 어느 쪽이 전투인지 랜덤
+      if (randInt(0, 1) === 0) {
+        layerGroupAssign[la] = battleGroup;
+        if (lb < MAP_NUM_LAYERS - 1) layerGroupAssign[lb] = nbGroup;
+      } else {
+        layerGroupAssign[la] = nbGroup;
+        if (lb < MAP_NUM_LAYERS - 1) layerGroupAssign[lb] = battleGroup;
+      }
+    }
+
+    // seeded Fisher-Yates 셔플 헬퍼
+    const shuffled = (arr: number[]) => {
+      const pool = [...arr];
+      for (let j = pool.length - 1; j > 0; j--) {
+        const k = Math.floor(random() * (j + 1));
+        [pool[j], pool[k]] = [pool[k], pool[j]];
+      }
+      return pool;
+    };
+
+    // 행 내 중복 없이 numNodes 개 뽑기 (그룹 크기 < numNodes 이면 두 번 채워 보충)
+    const pickUniqueFromGroup = (group: number[], numNodes: number): number[] => {
+      const pool = shuffled(group);
+      while (pool.length < numNodes) pool.push(...shuffled(group));
+      return pool.slice(0, numNodes);
+    };
+
     // 레이어별 노드 생성
     for (let layer = 0; layer < MAP_NUM_LAYERS; layer++) {
       const y        = height - 200 - layer * layerSpacingY;
@@ -1002,56 +1061,23 @@ export default class MainScene extends Phaser.Scene {
       const spacingX = width / (numNodes + 1);
       const nodes: MapNode[] = [];
 
-      // 레이어 그룹 결정
-      // - 마지막 레이어: 보스
-      // - 2-노드 레이어: 전투(A) 1개 + 그룹B 또는 C 1개 (위치 랜덤, 중복 불가)
-      // - 3-노드 레이어: 그룹 A/B/C 중 랜덤 (같은 그룹, 같은 행 내 타입 중복 불가)
-      const isBossLayer    = layer === MAP_NUM_LAYERS - 1;
-      const isTwoNodeMixed = !isEdgeLayer(layer) && numNodes === 2;
-      const layerGroup = layer === 0      ? null
-                       : isBossLayer      ? BOSS_NODE_TYPES
-                       : isTwoNodeMixed   ? null  // 개별 처리
-                       : NODE_TYPE_GROUPS[randInt(0, NODE_TYPE_GROUPS.length - 1)];
+      const isBossLayer = layer === MAP_NUM_LAYERS - 1;
 
-      // 2-노드 레이어: 반드시 전투 1개 + 비전투(B/C) 1개, 순서 랜덤
-      let mixedTypes: number[] | null = null;
-      if (isTwoNodeMixed) {
-        const battleGroup   = NODE_TYPE_GROUPS[0];
-        const otherGroupIdx = randInt(1, NODE_TYPE_GROUPS.length - 1);
-        const otherGroup    = NODE_TYPE_GROUPS[otherGroupIdx];
-        const battleType    = battleGroup[randInt(0, battleGroup.length - 1)];
-        const otherType     = otherGroup[randInt(0, otherGroup.length - 1)];
-        mixedTypes = randInt(0, 1) === 0 ? [battleType, otherType] : [otherType, battleType];
-      }
-
-      // 3-노드 동일 그룹: 행 내 중복 없도록 셔플 후 순서대로 배정
-      // 그룹 크기 < numNodes 이면 두 번 채워서 앞에서부터 사용
-      let uniqueGroupTypes: number[] | null = null;
-      if (layerGroup && !isBossLayer) {
-        const pool = [...layerGroup];
-        // seeded Fisher-Yates shuffle
-        for (let j = pool.length - 1; j > 0; j--) {
-          const k = Math.floor(random() * (j + 1));
-          [pool[j], pool[k]] = [pool[k], pool[j]];
-        }
-        // 부족하면 다시 셔플해서 보충 (그룹 A처럼 원소 수 < numNodes 인 경우)
-        while (pool.length < numNodes) {
-          const extra = [...layerGroup];
-          for (let j = extra.length - 1; j > 0; j--) {
-            const k = Math.floor(random() * (j + 1));
-            [extra[j], extra[k]] = [extra[k], extra[j]];
-          }
-          pool.push(...extra);
-        }
-        uniqueGroupTypes = pool.slice(0, numNodes);
+      // 이 레이어의 노드 타입 목록을 미리 계산 (중복 없도록)
+      let layerTypes: number[] | null = null;
+      if (!isEdgeLayer(layer) && !isBossLayer) {
+        layerTypes = pickUniqueFromGroup(layerGroupAssign[layer], numNodes);
       }
 
       for (let i = 0; i < numNodes; i++) {
         let nodeType: number;
-        if (layer === 0)             nodeType = 0;
-        else if (mixedTypes)         nodeType = mixedTypes[i];
-        else if (uniqueGroupTypes)   nodeType = uniqueGroupTypes[i];
-        else                         nodeType = layerGroup![randInt(0, layerGroup!.length - 1)];
+        if (layer === 0) {
+          nodeType = 0;
+        } else if (isBossLayer) {
+          nodeType = BOSS_NODE_TYPES[randInt(0, BOSS_NODE_TYPES.length - 1)];
+        } else {
+          nodeType = layerTypes![i];
+        }
 
         nodes.push({
           id: nodeId++,
@@ -1158,6 +1184,23 @@ export default class MainScene extends Phaser.Scene {
         }
       }
 
+      // 덱 카드 변경 이벤트 처리
+      if (typeof result.swapFrom === 'string' && typeof result.swapTo === 'string') {
+        this.swapDeckElement(result.swapFrom, result.swapTo);
+      }
+      if (typeof result.starUpElement === 'string') {
+        this.starUpDeckCard(result.starUpElement);
+      }
+      if (typeof result.pokerCard === 'number' && result.pokerCard > 0) {
+        this.addPokerCard(result.pokerCard);
+      }
+      if (typeof result.cardValueMultiplier === 'number') {
+        this.playerCardMult = parseFloat((this.playerCardMult * result.cardValueMultiplier).toFixed(4));
+      }
+      if (typeof result.shieldMultiplier === 'number') {
+        this.playerShieldMult = parseFloat((this.playerShieldMult * result.shieldMultiplier).toFixed(4));
+      }
+
       // 게임 오버 체크
       if (this.playerHp <= 0) {
         this.saveLegacyData(node.layer).then(() => {
@@ -1169,5 +1212,63 @@ export default class MainScene extends Phaser.Scene {
       this.saveGameState();
       this.isPaused = false;
     });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 덱 조작 헬퍼
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /** 원소 오프셋: water=0, fire=5, grass=10, lightning=15, earth=20 */
+  private readonly ELEM_OFFSET: Record<string, number> = {
+    water: 0, fire: 5, grass: 10, lightning: 15, earth: 20,
+  };
+
+  /** 카드 속성 전체 교환 (swapFrom 속성의 모든 카드를 swapTo 속성으로) */
+  private swapDeckElement(from: string, to: string) {
+    const offFrom = this.ELEM_OFFSET[from];
+    const offTo   = this.ELEM_OFFSET[to];
+    if (offFrom == null || offTo == null) return;
+    this.playerDeck.forEach(entry => {
+      if (entry.card.element === from && entry.card.stars >= 1 && entry.card.stars <= 5) {
+        entry.card = CARD_DATA_LIST[offTo + entry.card.stars - 1];
+      }
+    });
+    this.refreshDeckPanel();
+  }
+
+  /** 선택한 속성 카드 1장의 별 +1 업그레이드 */
+  private starUpDeckCard(element: string) {
+    const off = this.ELEM_OFFSET[element];
+    if (off == null) return;
+    const upgradable = this.playerDeck.filter(e => e.card.element === element && e.card.stars < 5);
+    if (upgradable.length === 0) return;
+    const target  = upgradable[Math.floor(Math.random() * upgradable.length)];
+    const newCard = CARD_DATA_LIST[off + target.card.stars]; // stars → stars+1 (offset에 stars 더하면 됨)
+    target.count--;
+    if (target.count <= 0) {
+      this.playerDeck = this.playerDeck.filter(e => e !== target);
+    }
+    const existing = this.playerDeck.find(e => e.card.id === newCard.id);
+    if (existing) existing.count++;
+    else this.playerDeck.push({ card: newCard, count: 1 });
+    this.refreshDeckPanel();
+  }
+
+  /** 인디언 포커 카드 획득: 랜덤 속성 + 지정 별 등급 1장 덱에 추가 */
+  private addPokerCard(stars: number) {
+    const ELEMS = Object.keys(this.ELEM_OFFSET);
+    const el    = ELEMS[Math.floor(Math.random() * ELEMS.length)];
+    const newCard = CARD_DATA_LIST[this.ELEM_OFFSET[el] + Math.min(Math.max(stars, 1), 5) - 1];
+    const existing = this.playerDeck.find(e => e.card.id === newCard.id);
+    if (existing) existing.count++;
+    else this.playerDeck.push({ card: newCard, count: 1 });
+    this.refreshDeckPanel();
+  }
+
+  /** 덱 패널 재생성 (덱 내용 변경 후 호출) */
+  private refreshDeckPanel() {
+    if (this.deckWindowContainer) this.deckWindowContainer.destroy(true);
+    this.createDeckWindow(this.scale.width, this.scale.height);
+    this.cameras.main.ignore(this.deckWindowContainer);
   }
 }

@@ -153,7 +153,7 @@ export default class IntroScene extends Phaser.Scene {
       // 골드 아이콘 + 텍스트 (attr_6 = 별)
       const goldIcon = this.add.image(PAD + ICON / 2, PAD + LINE / 2, 'attr_icons', 'attr_6');
       goldIcon.setDisplaySize(ICON, ICON);
-      const goldTxt = this.add.text(PAD + ICON + 8, PAD + 2, `누적 골드  ${totalGold} G`, {
+      const goldTxt = this.add.text(PAD + ICON + 8, PAD + 2, `${i18n.t('totalGold')}  ${totalGold} G`, {
         fontFamily: 'SBAggroB', fontSize: '15px', color: '#d4af37',
       });
       cont.add([goldIcon, goldTxt]);
@@ -168,7 +168,7 @@ export default class IntroScene extends Phaser.Scene {
       // 장비 헤더 (attr_5 = 일반)
       const eqIcon = this.add.image(PAD + ICON / 2, divY + 8 + LINE / 2, 'attr_icons', 'attr_5');
       eqIcon.setDisplaySize(ICON, ICON);
-      const eqLabel = this.add.text(PAD + ICON + 8, divY + 10, `수집 장비  ${allEquipment.length}종`, {
+      const eqLabel = this.add.text(PAD + ICON + 8, divY + 10, `${i18n.t('collectedEquip')}  ${allEquipment.length}종`, {
         fontFamily: 'SBAggroM', fontSize: '14px', color: '#aaaaaa',
       });
       cont.add([eqIcon, eqLabel]);
@@ -176,7 +176,7 @@ export default class IntroScene extends Phaser.Scene {
       // 장비 목록
       const listStartY = divY + 8 + LINE;
       if (allEquipment.length === 0) {
-        const t = this.add.text(PAD + ICON + 8, listStartY + 4, '아직 없음', {
+        const t = this.add.text(PAD + ICON + 8, listStartY + 4, i18n.t('noEquipYet'), {
           fontFamily: 'SBAggroL', fontSize: '13px', color: '#555555',
         });
         cont.add(t);

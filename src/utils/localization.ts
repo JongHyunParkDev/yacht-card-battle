@@ -56,6 +56,126 @@ export const translations = {
     'deckList': '현재 덱 리스트',
     'langKorean': '한국어',
     'langEnglish': 'English',
+    // ── 공통 버튼 ──────────────────────────────────────────────────────────────
+    'confirm': '확인',
+    'skip': '그냥 지나침',
+    'receive': '받기',
+    'flipCard': '뒤집기',
+    'continueBtn': '계속',
+    'skipGold': '그냥 지나침  (+10G)',
+    'cancelGold': '취소  (+10G)',
+    'exitWithGold': '10G 받고 나가기',
+    'bossStartFight': '전투 시작',
+    // ── 속성 이름 ──────────────────────────────────────────────────────────────
+    'elemWater': '물',
+    'elemFire': '불',
+    'elemGrass': '풀',
+    'elemLightning': '번개',
+    'elemEarth': '땅',
+    'elemNormal': '무속성',
+    // ── 전투 이벤트 ────────────────────────────────────────────────────────────
+    'battleTitleElemental': '[{elem}] 속성 몬스터 출현!',
+    'battleTitleNormal': '무속성 몬스터 출현!',
+    'battleDescElemental': '현재 맵 속성({elem}) 몬스터와 전투합니다.\n속성 유불리에 따라 데미지가 달라집니다.',
+    'battleDescNormal': '일반 속성 몬스터와 전투합니다.',
+    // ── 일반 몬스터 이름 ───────────────────────────────────────────────────────
+    'mobGoblin': '고블린',     'mobSkeleton': '스켈레톤',  'mobSlime': '슬라임',
+    'mobZombie': '좀비',       'mobBat': '배트',           'mobRat': '쥐떼',
+    'mobPoison': '독충',       'mobUnknown': '정체불명의 몬스터',
+    // ── 속성 몬스터 이름 ───────────────────────────────────────────────────────
+    'mobWaterSpirit': '물의 정령',     'mobJellyfishMage': '해파리 마법사', 'mobIceKnight': '얼음 기사',
+    'mobFireSpirit': '화염 정령',      'mobMagmaGolem': '마그마 골렘',      'mobFlameDemon': '불꽃 도깨비',
+    'mobGrassSpirit': '숲의 정령',     'mobPoisonWitch': '독초 마녀',       'mobVineGolem': '덩굴 골렘',
+    'mobLightningSpirit': '번개 정령', 'mobElectricBat': '전기 박쥐',       'mobStormMage': '폭풍 마도사',
+    'mobEarthSpirit': '땅의 정령',     'mobRockGiant': '바위 거인',          'mobSandWarrior': '모래 무사',
+    // ── 강화 이벤트 ────────────────────────────────────────────────────────────
+    'enhanceTitle': '패시브 강화',
+    'enhanceDesc': '하나를 선택하여 영구 강화합니다.\n또는 10G를 받고 지나칩니다.',
+    'passiveIronWill': '강철 의지',
+    'passiveIronWillDesc': '최대 HP +10  (현재 {cur} → {next})',
+    'passiveSharpSense': '예리한 감각',
+    'passiveSharpSenseDesc': '치명 확률 +5%  (현재 {cur}% → {next}%)',
+    'passiveBattleFrenzy': '전투 광기',
+    'passiveBattleFrenzyDesc': '치명 배율 +0.2×  (현재 {cur}× → {next}×)',
+    'passiveIronWall': '철벽 방어',
+    'passiveIronWallDesc': '방어력 +3  (현재 {cur} → {next})',
+    'passiveSharpInstinct': '날카로운 본능',
+    'passiveSharpInstinctDesc': '공격력 +5  (현재 {cur} → {next})',
+    // ── 보물 이벤트 ────────────────────────────────────────────────────────────
+    'treasureTitle': '보물 상자',
+    'treasureSlot': '장비 칸: {cur} / {max}',
+    'treasureDescFull': '장비 칸이 가득 찼습니다.\n획득 시 기존 장비 중 하나와 교체합니다.',
+    'treasureDescNormal': '장비 3개 중 1개를 선택합니다.\n또는 10G를 받고 지나칩니다.',
+    'treasureReplaceTitle': '교체할 장비를 선택하세요',
+    // ── 하트 카드 이벤트 ───────────────────────────────────────────────────────
+    'heartTitle': '하트 카드',
+    'heartDesc': 'HP를 5 잃는 대신\n덱의 카드 밸류를 ×1.3 영구 강화합니다.\n\n현재 HP: {hp}',
+    'heartWarning': 'HP가 부족합니다! (HP > 5 필요)',
+    'heartAccept': '수락  (HP -5)',
+    'heartRefuse': '거절',
+    // ── 방어 카드 이벤트 ───────────────────────────────────────────────────────
+    'shieldTitle': '방어 카드',
+    'shieldDesc': '덱의 모든 방어(쉴드) 카드의\n쉴드량이 ×1.2 영구 증가합니다.',
+    // ── 별 카드 이벤트 ─────────────────────────────────────────────────────────
+    'starTitle': '별 카드',
+    'starDesc': '선택한 속성의 카드 중 하나의 별(등급)을 +1 올립니다.',
+    // ── 대체 카드 이벤트 ───────────────────────────────────────────────────────
+    'swapTitle': '대체 카드',
+    'swapDesc': '교환할 속성을 선택합니다.\n선택한 속성 카드 → 다른 속성 카드로 교환',
+    // ── 카드 도박 이벤트 ───────────────────────────────────────────────────────
+    'flipTitle': '카드 도박',
+    'flipRuleText': '같은 속성이면 골드 ×2, 다른 속성이면 즉시 종료 0G\n언제든 10G 받고 나갈 수 있습니다.',
+    // ── 인디언 포커 이벤트 ─────────────────────────────────────────────────────
+    'indianPokerTitle': '인디언 포커  ({elem} 속성)',
+    // ── 보스 이벤트 ────────────────────────────────────────────────────────────
+    'bossAppear': '{elem} 보스 등장',
+    'bossNameWater': '해룡왕  아쿠아리스',
+    'bossNameFire': '화염군주  이그니스',
+    'bossNameGrass': '대수목  실바나',
+    'bossNameLightning': '뇌신  토르무스',
+    'bossNameEarth': '대지의 왕  테라',
+    'bossNameFinal': '혼돈의 군주  카오스',
+    // ── 인트로 ─────────────────────────────────────────────────────────────────
+    'totalGold': '누적 골드',
+    'collectedEquip': '수집 장비',
+    'noEquipYet': '아직 없음',
+    // ── 캐릭터 선택 ────────────────────────────────────────────────────────────
+    'startEquip': '출발 장비',
+    'noEquipCollected': '수집된 장비 없음  —  플레이를 통해 장비를 모아보세요',
+    // ── 장비 이벤트 ────────────────────────────────────────────────────────────
+    'newEquip': '새 장비',
+    'noNewEquip': '보물 상자에 새 장비가 없습니다.\n(이미 모든 장비를 보유 중)',
+    // ── 카드 도박 이벤트 ───────────────────────────────────────────────────────
+    'currentGoldLabel': '현재 골드',
+    'flipFirstCard': '첫 번째 카드를 뒤집습니다...',
+    'baseAttrLabel': '기준 속성',
+    'sameAttr': '같은 속성! {gold}G',
+    'diffAttr': '다른 속성! 골드 0G',
+    'allFlipped': '완주! 최종 골드: {gold}G',
+    // ── 인디언 포커 이벤트 ─────────────────────────────────────────────────────
+    'round': '라운드',
+    'foldToken': '포기 토큰',
+    'remainChance': '남은 기회',
+    'opponent': '상대방',
+    'myCardHidden': '나 (뒤집힘)',
+    'myCardRevealed': '나',
+    'betOrFold': '배팅 또는 배팅 포기를 선택하세요.',
+    'obtainableCard': '확보 가능 카드',
+    'bet': '배팅',
+    'pokerFold': '배팅 포기',
+    'noFoldToken': '배팅 포기 토큰 없음!',
+    'cardReveal': '카드 공개!',
+    'pokerWin': '승리! ★{n} 카드 확보 가능',
+    'pokerDraw': '동점! 라운드 재시작',
+    'pokerLose': '패배! 기회 {n}개 남음',
+    'pokerExhausted': '기회 소진. 이벤트 종료',
+    'pokerSweep': '전승! ★{n}성 카드 획득!',
+    'pokerFiveStarFold': '5성 카드를 포기할 수 없습니다!',
+    'pokerFolded': '포기 (토큰 {n}개 남음)',
+    'pokerTakeConfirm': '★{n}성 카드를 받고 끝내시겠습니까?',
+    // ── 보스 이벤트 ────────────────────────────────────────────────────────────
+    'bossRoundInfo': '{rounds}라운드 전투\n보스를 쓰러뜨리면 고유 보상을 획득합니다.',
+    'bossStats': 'HP {hp}/{maxHp}   공격 {atk}   방어 {def}   치명 {crit}%',
     // ── 카드 이름 ──────────────────────────────────────────────────────────────
     'card0Name': '물의 물약',    'card1Name': '산호 검사',      'card2Name': '폭풍의 기사',
     'card3Name': '포세이돈',     'card4Name': '심해의 대어',
@@ -156,6 +276,126 @@ export const translations = {
     'deckList': 'Deck List',
     'langKorean': '한국어',
     'langEnglish': 'English',
+    // ── 공통 버튼 ──────────────────────────────────────────────────────────────
+    'confirm': 'OK',
+    'skip': 'Skip',
+    'receive': 'Take',
+    // ── 속성 이름 ──────────────────────────────────────────────────────────────
+    'elemWater': 'Water',
+    'elemFire': 'Fire',
+    'elemGrass': 'Grass',
+    'elemLightning': 'Lightning',
+    'elemEarth': 'Earth',
+    'elemNormal': 'Normal',
+    // ── 전투 이벤트 ────────────────────────────────────────────────────────────
+    'battleTitleElemental': '[{elem}] Elemental Monster Appears!',
+    'battleTitleNormal': 'Normal Monster Appears!',
+    'battleDescElemental': 'Battle a {elem} elemental monster.\nDamage varies based on elemental advantage.',
+    'battleDescNormal': 'Battle against a normal monster.',
+    // ── 일반 몬스터 이름 ───────────────────────────────────────────────────────
+    'mobGoblin': 'Goblin',        'mobSkeleton': 'Skeleton',  'mobSlime': 'Slime',
+    'mobZombie': 'Zombie',        'mobBat': 'Bat',            'mobRat': 'Rat Pack',
+    'mobPoison': 'Venomling',     'mobUnknown': 'Unknown Monster',
+    // ── 속성 몬스터 이름 ───────────────────────────────────────────────────────
+    'mobWaterSpirit': 'Water Spirit',      'mobJellyfishMage': 'Jellyfish Mage',  'mobIceKnight': 'Ice Knight',
+    'mobFireSpirit': 'Fire Spirit',        'mobMagmaGolem': 'Magma Golem',        'mobFlameDemon': 'Flame Imp',
+    'mobGrassSpirit': 'Forest Spirit',     'mobPoisonWitch': 'Poison Witch',      'mobVineGolem': 'Vine Golem',
+    'mobLightningSpirit': 'Storm Spirit',  'mobElectricBat': 'Electric Bat',      'mobStormMage': 'Storm Mage',
+    'mobEarthSpirit': 'Earth Spirit',      'mobRockGiant': 'Rock Giant',          'mobSandWarrior': 'Sand Warrior',
+    // ── 강화 이벤트 ────────────────────────────────────────────────────────────
+    'enhanceTitle': 'Passive Upgrade',
+    'enhanceDesc': 'Choose one for a permanent upgrade.\nOr take 10G and skip.',
+    'passiveIronWill': 'Iron Will',
+    'passiveIronWillDesc': 'Max HP +10  ({cur} → {next})',
+    'passiveSharpSense': 'Sharp Sense',
+    'passiveSharpSenseDesc': 'CRIT Rate +5%  ({cur}% → {next}%)',
+    'passiveBattleFrenzy': 'Battle Frenzy',
+    'passiveBattleFrenzyDesc': 'CRIT DMG +0.2×  ({cur}× → {next}×)',
+    'passiveIronWall': 'Iron Wall',
+    'passiveIronWallDesc': 'DEF +3  ({cur} → {next})',
+    'passiveSharpInstinct': 'Sharp Instinct',
+    'passiveSharpInstinctDesc': 'ATK +5  ({cur} → {next})',
+    // ── 보물 이벤트 ────────────────────────────────────────────────────────────
+    'treasureTitle': 'Treasure Chest',
+    'treasureSlot': 'Equipment Slots: {cur} / {max}',
+    'treasureDescFull': 'Equipment slots are full.\nYou must replace an existing item.',
+    'treasureDescNormal': 'Choose 1 of 3 equipment items.\nOr take 10G and skip.',
+    'treasureReplaceTitle': 'Select equipment to replace',
+    // ── 하트 카드 이벤트 ───────────────────────────────────────────────────────
+    'heartTitle': 'Heart Card',
+    'heartDesc': 'Lose 5 HP in exchange for\npermanently boosting card value by ×1.3.\n\nCurrent HP: {hp}',
+    'heartWarning': 'Not enough HP! (Need HP > 5)',
+    'heartAccept': 'Accept  (HP -5)',
+    'heartRefuse': 'Refuse',
+    // ── 방어 카드 이벤트 ───────────────────────────────────────────────────────
+    'shieldTitle': 'Defense Card',
+    'shieldDesc': 'Permanently increases the shield\nvalue of all defense cards by ×1.2.',
+    // ── 별 카드 이벤트 ─────────────────────────────────────────────────────────
+    'starTitle': 'Star Card',
+    'starDesc': 'Upgrades the star rating of one card\nof the selected element by +1.',
+    // ── 대체 카드 이벤트 ───────────────────────────────────────────────────────
+    'swapTitle': 'Swap Card',
+    'swapDesc': 'Select the element to swap.\nCards of that element will be exchanged for another element.',
+    // ── 카드 도박 이벤트 ───────────────────────────────────────────────────────
+    'flipTitle': 'Card Gamble',
+    'flipRuleText': 'Same element: Gold ×2, Different: 0G immediately\nYou can leave with 10G at any time.',
+    // ── 인디언 포커 이벤트 ─────────────────────────────────────────────────────
+    'indianPokerTitle': 'Indian Poker  ({elem})',
+    // ── 보스 이벤트 ────────────────────────────────────────────────────────────
+    'bossAppear': '{elem} Boss Appears',
+    'bossNameWater': 'Sea Dragon King  Aquaris',
+    'bossNameFire': 'Flame Lord  Ignis',
+    'bossNameGrass': 'Great Tree  Silvana',
+    'bossNameLightning': 'Thunder God  Thormus',
+    'bossNameEarth': 'King of Earth  Terra',
+    'bossNameFinal': 'Lord of Chaos  Kaos',
+    'flipCard': 'Flip',
+    'continueBtn': 'Continue',
+    'skipGold': 'Skip  (+10G)',
+    'cancelGold': 'Cancel  (+10G)',
+    'exitWithGold': 'Take 10G and leave',
+    'bossStartFight': 'Start Battle',
+    // ── 인트로 ─────────────────────────────────────────────────────────────────
+    'totalGold': 'Total Gold',
+    'collectedEquip': 'Equipment',
+    'noEquipYet': 'None yet',
+    // ── 캐릭터 선택 ────────────────────────────────────────────────────────────
+    'startEquip': 'Starting Equipment',
+    'noEquipCollected': 'No equipment yet  —  Play to collect equipment',
+    // ── 장비 이벤트 ────────────────────────────────────────────────────────────
+    'newEquip': 'New Equipment',
+    'noNewEquip': 'No new equipment in the chest.\n(You already own all equipment)',
+    // ── 카드 도박 이벤트 ───────────────────────────────────────────────────────
+    'currentGoldLabel': 'Current Gold',
+    'flipFirstCard': 'Flipping the first card...',
+    'baseAttrLabel': 'Base element',
+    'sameAttr': 'Same element! {gold}G',
+    'diffAttr': 'Different element! 0G',
+    'allFlipped': 'All cleared! Final gold: {gold}G',
+    // ── 인디언 포커 이벤트 ─────────────────────────────────────────────────────
+    'round': 'Round',
+    'foldToken': 'Fold Token',
+    'remainChance': 'Remaining Chances',
+    'opponent': 'Opponent',
+    'myCardHidden': 'Me (hidden)',
+    'myCardRevealed': 'Me',
+    'betOrFold': 'Choose to bet or fold.',
+    'obtainableCard': 'Obtainable Card',
+    'bet': 'Bet',
+    'pokerFold': 'Fold',
+    'noFoldToken': 'No fold tokens!',
+    'cardReveal': 'Card revealed!',
+    'pokerWin': 'Win! ★{n} card(s) obtainable',
+    'pokerDraw': 'Draw! Restarting round.',
+    'pokerLose': 'Defeat! {n} chance(s) remaining',
+    'pokerExhausted': 'All chances used. Event ended.',
+    'pokerSweep': 'Perfect! ★{n}-star card acquired!',
+    'pokerFiveStarFold': 'Cannot fold a 5-star card!',
+    'pokerFolded': 'Folded ({n} token(s) remaining)',
+    'pokerTakeConfirm': 'Take ★{n}-star card and finish?',
+    // ── 보스 이벤트 ────────────────────────────────────────────────────────────
+    'bossRoundInfo': '{rounds}-round battle\nDefeat the boss for a unique reward.',
+    'bossStats': 'HP {hp}/{maxHp}   ATK {atk}   DEF {def}   CRIT {crit}%',
     // ── 카드 이름 ──────────────────────────────────────────────────────────────
     'card0Name': 'Water Potion',      'card1Name': 'Coral Swordsman',    'card2Name': 'Storm Knight',
     'card3Name': 'Poseidon',          'card4Name': 'Deep Sea Leviathan',
@@ -226,6 +466,15 @@ class LocalizationManager {
 
   t(key: string): string {
     return (translations[this.currentLang] as any)[key] || key;
+  }
+
+  /** {placeholder} 치환을 지원하는 포맷 헬퍼 */
+  f(key: string, params: Record<string, string | number>): string {
+    let str = this.t(key);
+    for (const [k, v] of Object.entries(params)) {
+      str = str.replace(`{${k}}`, String(v));
+    }
+    return str;
   }
 }
 

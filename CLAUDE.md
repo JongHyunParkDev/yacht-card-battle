@@ -37,6 +37,9 @@ PreloadScene → IntroScene → CharacterSelectScene → MainScene
 ```
 
 - **PreloadScene** (`src/scenes/PreloadScene.ts`): Asset loading (card-sprite.png 6×5 grid at 370px each, attr-sprite.png 7 icons at 128px, fonts)
+  - **새 에셋은 반드시 PreloadScene의 `preload()`에 등록** — 다른 씬에서 `this.load.*` 호출 금지
+  - 등록 방법: `this.load.image(key, path)` / `this.load.spritesheet(key, path, frameConfig)` / `this.load.atlas(key, imgPath, jsonPath)`
+  - 등록한 key를 해당 씬 코드 상단 주석이나 상수로 명시해 추적 가능하게 유지
 - **IntroScene** (`src/scenes/IntroScene.ts`): Main menu
 - **CharacterSelectScene** (`src/scenes/CharacterSelectScene.ts`): Pre-game character/weapon selection
 - **MainScene** (`src/scenes/MainScene.ts`): Core gameplay — procedural map, node navigation, deck panel, pause menu
@@ -53,8 +56,11 @@ PreloadScene → IntroScene → CharacterSelectScene → MainScene
 - Generated in `MainScene` using seeded RNG based on map hash
 - 12 layers: start (1 node) → intermediate layers (2–4 nodes) → final boss (1 node)
 
-### Localization
+### Localization (i18n)
 - `src/utils/localization.ts` — Korean/English string maps, language toggled via SettingsScene and persisted via Electron IPC
+- **모든 UI 텍스트는 반드시 `i18n.t('key')` 를 통해 출력** — 하드코딩 금지
+- 새 문자열 추가 시 `localization.ts`의 `ko` / `en` 양쪽 맵에 동시에 등록할 것
+- 언어 변경은 런타임에 즉시 반영되므로 텍스트 오브젝트 생성 시점에 `i18n.t()` 호출 필요
 
 ### Persistence (Desktop)
 - `electron/main.js` handles IPC for save/load game state and settings to disk

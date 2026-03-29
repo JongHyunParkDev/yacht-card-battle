@@ -1,6 +1,12 @@
 import Phaser from 'phaser';
 import { NODE_TYPE, BOSS_ELEMENT_NAME, isBossType } from '@src/data/nodeTypes';
 import type { CardElement } from '@src/data/cardData';
+import { i18n } from '@src/utils/localization';
+import {
+  drawEquipment, formatEquipStats, getEquipmentById,
+  EQUIP_GRADE_LABEL, EQUIP_GRADE_COLOR,
+  type EquipmentData,
+} from '@src/data/equipmentData';
 
 // ─── 이벤트 데이터 타입 ────────────────────────────────────────────────────────
 
@@ -171,10 +177,8 @@ export default class NodeEventScene extends Phaser.Scene {
   }
 
   private elementName(el: string): string {
-    const map: Record<string, string> = {
-      water: '물', fire: '불', grass: '풀', lightning: '번개', earth: '땅', normal: '무속성',
-    };
-    return map[el] ?? el;
+    const key = 'elem' + el.charAt(0).toUpperCase() + el.slice(1);
+    return i18n.t(key) || el;
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -188,7 +192,7 @@ export default class NodeEventScene extends Phaser.Scene {
     const H = this.H;
     const ATTR_IDX: Record<string, number> = { water:0, fire:1, grass:2, lightning:3, earth:4, normal:5 };
     const titleFrame = isElemental ? 'row0_1' : 'row0_0';
-    const titleText  = isElemental ? `[${this.elementName(mapElement)}] 속성 몬스터 출현!` : '무속성 몬스터 출현!';
+    const titleText  = isElemental ? i18n.f('battleTitleElemental', { elem: this.elementName(mapElement) }) : i18n.t('battleTitleNormal');
     const title = this.makeHeader(titleFrame, titleText, -H * 0.30);
 
     const mobName = isElemental ? this.randomElementalMobName(mapElement) : this.randomNormalMobName();
@@ -214,17 +218,17 @@ export default class NodeEventScene extends Phaser.Scene {
 
     const descText = this.makeBody(
       isElemental
-        ? `현재 맵 속성(${this.elementName(mapElement)}) 몬스터와 전투합니다.\n속성 유불리에 따라 데미지가 달라집니다.`
-        : '일반 속성 몬스터와 전투합니다.',
+        ? i18n.f('battleDescElemental', { elem: this.elementName(mapElement) })
+        : i18n.t('battleDescNormal'),
       H * 0.02,
     );
 
     const statsText = this.add.text(0, H * 0.14,
-      `HP ${playerHp}/${playerMaxHp}   공격 ${playerAtk}   방어 ${playerDef}   치명 ${playerCrit}%`,
+      i18n.f('bossStats', { hp: playerHp, maxHp: playerMaxHp, atk: playerAtk, def: playerDef, crit: playerCrit }),
       { fontFamily: FONT_L, fontSize: '15px', color: '#aaaaaa' },
     ).setOrigin(0.5);
 
-    const battleBtn = this.makeButton(0, H * 0.28, '전투 시작', 0x8b0000, () => {
+    const battleBtn = this.makeButton(0, H * 0.28, i18n.t('bossStartFight'), 0x8b0000, () => {
       this.closeEvent({ battleResult: 'win', mobName });
     }, Math.round(this.W * 0.25), 60);
 
@@ -232,20 +236,20 @@ export default class NodeEventScene extends Phaser.Scene {
   }
 
   private randomNormalMobName() {
-    const n = ['고블린', '스켈레톤', '슬라임', '좀비', '배트', '쥐떼', '독충'];
-    return n[Math.floor(Math.random() * n.length)];
+    const keys = ['mobGoblin', 'mobSkeleton', 'mobSlime', 'mobZombie', 'mobBat', 'mobRat', 'mobPoison'];
+    return i18n.t(keys[Math.floor(Math.random() * keys.length)]);
   }
 
   private randomElementalMobName(el: string) {
     const m: Record<string, string[]> = {
-      water:     ['물의 정령', '해파리 마법사', '얼음 기사'],
-      fire:      ['화염 정령', '마그마 골렘', '불꽃 도깨비'],
-      grass:     ['숲의 정령', '독초 마녀', '덩굴 골렘'],
-      lightning: ['번개 정령', '전기 박쥐', '폭풍 마도사'],
-      earth:     ['땅의 정령', '바위 거인', '모래 무사'],
+      water:     ['mobWaterSpirit', 'mobJellyfishMage', 'mobIceKnight'],
+      fire:      ['mobFireSpirit', 'mobMagmaGolem', 'mobFlameDemon'],
+      grass:     ['mobGrassSpirit', 'mobPoisonWitch', 'mobVineGolem'],
+      lightning: ['mobLightningSpirit', 'mobElectricBat', 'mobStormMage'],
+      earth:     ['mobEarthSpirit', 'mobRockGiant', 'mobSandWarrior'],
     };
-    const list = m[el] ?? ['정체불명의 몬스터'];
-    return list[Math.floor(Math.random() * list.length)];
+    const list = m[el] ?? ['mobUnknown'];
+    return i18n.t(list[Math.floor(Math.random() * list.length)]);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -258,15 +262,15 @@ export default class NodeEventScene extends Phaser.Scene {
     const { playerMaxHp, playerCrit, playerCritDmg, playerDef, playerAtk } = this.data_;
 
     const passives = [
-      { name: '강철 의지',     desc: `최대 HP +10  (현재 ${playerMaxHp} → ${playerMaxHp + 10})`,             result: { maxHpDelta: 10 } },
-      { name: '예리한 감각',   desc: `치명 확률 +5%  (현재 ${playerCrit}% → ${playerCrit + 5}%)`,             result: { critDelta: 5 } },
-      { name: '전투 광기',     desc: `치명 배율 +0.2×  (현재 ${playerCritDmg.toFixed(1)}× → ${(playerCritDmg + 0.2).toFixed(1)}×)`, result: { critDmgDelta: 0.2 } },
-      { name: '철벽 방어',     desc: `방어력 +3  (현재 ${playerDef} → ${playerDef + 3})`,                     result: { defDelta: 3 } },
-      { name: '날카로운 본능', desc: `공격력 +5  (현재 ${playerAtk} → ${playerAtk + 5})`,                     result: { atkDelta: 5 } },
+      { name: i18n.t('passiveIronWill'),      desc: i18n.f('passiveIronWillDesc',      { cur: playerMaxHp,                   next: playerMaxHp + 10 }),             result: { maxHpDelta: 10 } },
+      { name: i18n.t('passiveSharpSense'),    desc: i18n.f('passiveSharpSenseDesc',    { cur: playerCrit,                    next: playerCrit + 5 }),               result: { critDelta: 5 } },
+      { name: i18n.t('passiveBattleFrenzy'),  desc: i18n.f('passiveBattleFrenzyDesc',  { cur: playerCritDmg.toFixed(1),      next: (playerCritDmg + 0.2).toFixed(1) }), result: { critDmgDelta: 0.2 } },
+      { name: i18n.t('passiveIronWall'),      desc: i18n.f('passiveIronWallDesc',      { cur: playerDef,                    next: playerDef + 3 }),                 result: { defDelta: 3 } },
+      { name: i18n.t('passiveSharpInstinct'), desc: i18n.f('passiveSharpInstinctDesc', { cur: playerAtk,                    next: playerAtk + 5 }),                 result: { atkDelta: 5 } },
     ];
 
-    const title   = this.makeHeader('row0_2', '패시브 강화', -H * 0.38);
-    const desc    = this.makeBody('하나를 선택하여 영구 강화합니다.\n또는 10G를 받고 지나칩니다.', -H * 0.29);
+    const title   = this.makeHeader('row0_2', i18n.t('enhanceTitle'), -H * 0.38);
+    const desc    = this.makeBody(i18n.t('enhanceDesc'), -H * 0.29);
     const divider = this.makeDivider(-H * 0.22);
 
     // 구분선(-H*0.22) 아래에서 버튼 시작
@@ -282,7 +286,7 @@ export default class NodeEventScene extends Phaser.Scene {
     );
 
     const lastBtnY = startY + (passives.length - 1) * BTN_SPACING;
-    const skipBtn = this.makeButton(0, lastBtnY + BTN_SPACING * 0.85, '그냥 지나침  (+10G)', 0x3a3000, () => {
+    const skipBtn = this.makeButton(0, lastBtnY + BTN_SPACING * 0.85, i18n.t('skipGold'), 0x3a3000, () => {
       this.closeEvent({ goldDelta: 10 });
     }, Math.round(W * 0.30), 44);
 
@@ -299,65 +303,101 @@ export default class NodeEventScene extends Phaser.Scene {
     const { playerEquipment, maxEquipSlots } = this.data_;
     const isFull = playerEquipment.length >= maxEquipSlots;
 
-    const equipPool = [
-      { label: '불꽃의 반지   — 불 속성 공격 +20%',       result: { equipment: '불꽃의 반지' } },
-      { label: '바다의 부적   — 물 속성 방어 +15%',       result: { equipment: '바다의 부적' } },
-      { label: '번개 팔찌     — 공격 시 번개 추가타 10%', result: { equipment: '번개 팔찌' } },
-      { label: '대지의 목걸이 — 최대 HP +15',             result: { equipment: '대지의 목걸이', maxHpDelta: 15 } },
-      { label: '폭풍의 망토   — 풀 속성 크리티컬 +8%',   result: { equipment: '폭풍의 망토' } },
-      { label: '용의 비늘     — 전체 방어력 +5',          result: { equipment: '용의 비늘', defDelta: 5 } },
-    ];
-    const drawn = Phaser.Utils.Array.Shuffle([...equipPool]).slice(0, 3);
+    // 이미 보유한 장비 제외 후 가중치 랜덤으로 3개 추출
+    const drawn = drawEquipment(3, playerEquipment);
 
-    const slotText = `장비 칸: ${playerEquipment.length} / ${maxEquipSlots}`;
-    const title   = this.makeHeader('row0_3', '보물 상자', -H * 0.35);
-    const slotLbl = this.add.text(0, -H * 0.27, slotText, {
+    const slotText = i18n.f('treasureSlot', { cur: playerEquipment.length, max: maxEquipSlots });
+    const title   = this.makeHeader('row0_3', i18n.t('treasureTitle'), -H * 0.35);
+    const slotLbl = this.add.text(0, -H * 0.275, slotText, {
       fontFamily: FONT_M, fontSize: '16px',
       color: isFull ? '#e74c3c' : '#aaaaaa',
     }).setOrigin(0.5);
-    const desc    = this.makeBody(
-      isFull ? '장비 칸이 가득 찼습니다.\n획득 시 기존 장비 중 하나와 교체합니다.' : '장비 3개 중 1개를 선택합니다.\n또는 10G를 받고 지나칩니다.',
-      -H * 0.21,
+    const desc = this.makeBody(
+      isFull ? i18n.t('treasureDescFull') : i18n.t('treasureDescNormal'),
+      -H * 0.22,
     );
-    const divider = this.makeDivider(-H * 0.14);
+    const divider = this.makeDivider(-H * 0.15);
+
+    /** 장비 선택 결과 빌드: 스탯 델타 포함 */
+    const buildResult = (equip: EquipmentData) => {
+      const r: Record<string, unknown> = { equipment: equip.id };
+      const s = equip.stats;
+      if (s.atk)       r.atkDelta    = s.atk;
+      if (s.def)       r.defDelta    = s.def;
+      if (s.crit)      r.critDelta   = s.crit;
+      if (s.critDmg)   r.critDmgDelta = s.critDmg;
+      if (s.maxHp)     r.maxHpDelta  = s.maxHp;
+      if (s.cardMult)  r.cardValueMultiplier = s.cardMult;
+      if (s.shieldMult) r.shieldMultiplier   = s.shieldMult;
+      return r;
+    };
+
+    /** 장비 버튼 라벨: [등급] 이름 | 스탯 요약 */
+    const makeLabel = (equip: EquipmentData) => {
+      const gradeLabel = EQUIP_GRADE_LABEL[equip.grade];
+      const stats      = formatEquipStats(equip.stats);
+      const special    = equip.special ? `  ★ ${equip.special.desc}` : '';
+      return `[${gradeLabel}]  ${equip.name}\n${stats}${special}`;
+    };
+
+    /** 장비 버튼 색상 (등급별) */
+    const GRADE_BG: Record<string, number> = {
+      common: 0x2a2a2a, uncommon: 0x0d2a3a, rare: 0x2a0a3a,
+      unique: 0x3a2800, legendary: 0x3a0a00,
+    };
 
     // 장비 선택 → 슬롯 가득 차면 교체 화면으로 전환
-    const pickEquip = (item: typeof drawn[0]) => {
+    const pickEquip = (equip: EquipmentData) => {
+      const result = buildResult(equip);
       if (!isFull) {
-        this.closeEvent(item.result);
+        this.closeEvent(result);
         return;
       }
-      // 교체 화면: 기존 장비 목록을 보여주고 교체할 것 선택
+      // 교체 화면
       this.root.removeAll(true);
 
-      const replaceTitle = this.makeTitle('🔄 교체할 장비를 선택하세요', -H * 0.32);
-      const newLbl       = this.add.text(0, -H * 0.22, `새 장비: ${item.label}`, {
-        fontFamily: FONT_M, fontSize: '16px', color: '#f5cc4a',
+      const replaceTitle = this.makeTitle(i18n.t('treasureReplaceTitle'), -H * 0.32);
+      const newLbl = this.add.text(0, -H * 0.23, `${i18n.t('newEquip')}: ${equip.name}`, {
+        fontFamily: FONT_M, fontSize: '16px', color: EQUIP_GRADE_COLOR[equip.grade],
       }).setOrigin(0.5);
-      const divider2 = this.makeDivider(-H * 0.16);
+      const div2 = this.makeDivider(-H * 0.17);
 
-      const replaceBtns = playerEquipment.map((eq, i) =>
-        this.makeButton(0, -H * 0.08 + i * (H * 0.13), `❌ ${eq}`, 0x5c1a1a, () => {
-          this.closeEvent({ ...item.result, replaceEquipment: eq });
-        }, Math.round(W * 0.46), 56),
-      );
+      const replaceBtns = playerEquipment.map((eqId, i) => {
+        const owned = getEquipmentById(eqId);
+        const lbl   = owned ? `${owned.name}  [${EQUIP_GRADE_LABEL[owned.grade]}]` : eqId;
+        return this.makeButton(0, -H * 0.09 + i * (H * 0.13), lbl, 0x5c1a1a, () => {
+          this.closeEvent({ ...result, replaceEquipment: eqId });
+        }, Math.round(W * 0.46), 56);
+      });
 
-      const cancelBtn = this.makeButton(0, H * 0.33, '취소  (+10G)', 0x3a3000, () => {
+      const cancelBtn = this.makeButton(0, H * 0.33, i18n.t('cancelGold'), 0x3a3000, () => {
         this.closeEvent({ goldDelta: 10 });
       }, Math.round(W * 0.30), 48);
 
-      this.root.add([replaceTitle, newLbl, divider2, ...replaceBtns, cancelBtn]);
+      this.root.add([replaceTitle, newLbl, div2, ...replaceBtns, cancelBtn]);
     };
 
-    const btns = drawn.map((item, i) =>
+    const btns = drawn.map((equip, i) =>
       this.makeButton(
-        0, -H * 0.04 + i * (H * 0.13),
-        item.label, 0x3a2800, () => pickEquip(item),
-        Math.round(W * 0.52), 56,
+        0, -H * 0.05 + i * (H * 0.135),
+        makeLabel(equip),
+        GRADE_BG[equip.grade] ?? 0x2a2a2a,
+        () => pickEquip(equip),
+        Math.round(W * 0.60), 60,
       ),
     );
 
-    const skipBtn = this.makeButton(0, H * 0.36, '그냥 지나침  (+10G)', 0x3a3000, () => {
+    // 장비가 모두 소진된 경우
+    if (drawn.length === 0) {
+      const noEquip = this.makeBody(i18n.t('noNewEquip'), H * 0.02);
+      const skipBtn = this.makeButton(0, H * 0.22, i18n.t('confirm'), 0x333333, () => {
+        this.closeEvent({});
+      }, Math.round(W * 0.22), 48);
+      this.root.add([title, slotLbl, divider, noEquip, skipBtn]);
+      return;
+    }
+
+    const skipBtn = this.makeButton(0, H * 0.37, i18n.t('skipGold'), 0x3a3000, () => {
       this.closeEvent({ goldDelta: 10 });
     }, Math.round(W * 0.30), 48);
 
@@ -384,11 +424,11 @@ export default class NodeEventScene extends Phaser.Scene {
     let baseElement: CardElement | null = null;
     let gameOver    = false;
 
-    const title     = this.makeHeader('row0_4', '카드 도박', -H * 0.40);
-    const ruleText  = this.makeBody('같은 속성이면 골드 ×2, 다른 속성이면 즉시 종료 0G\n언제든 10G 받고 나갈 수 있습니다.', -H * 0.31);
+    const title     = this.makeHeader('row0_4', i18n.t('flipTitle'), -H * 0.40);
+    const ruleText  = this.makeBody(i18n.t('flipRuleText'), -H * 0.31);
     const divider   = this.makeDivider(-H * 0.22);
 
-    const goldLabel = this.add.text(0, -H * 0.14, `현재 골드: ${currentGold}G`, {
+    const goldLabel = this.add.text(0, -H * 0.14, `${i18n.t('currentGoldLabel')}: ${currentGold}G`, {
       fontFamily: FONT_B, fontSize: '26px', color: '#f5cc4a',
     }).setOrigin(0.5);
 
@@ -417,25 +457,25 @@ export default class NodeEventScene extends Phaser.Scene {
       return { g, qMark, icon, cx, cy };
     });
 
-    const statusText = this.add.text(0, H * 0.22, '첫 번째 카드를 뒤집습니다...', {
+    const statusText = this.add.text(0, H * 0.22, i18n.t('flipFirstCard'), {
       fontFamily: FONT_M, fontSize: '17px', color: '#aaaaaa',
     }).setOrigin(0.5);
 
     // 10G 받고 나가기 (항상 보임)
-    const exitBtn = this.makeButton(-W * 0.22, H * 0.34, '10G 받고 나가기', 0x3a3000, () => {
+    const exitBtn = this.makeButton(-W * 0.22, H * 0.34, i18n.t('exitWithGold'), 0x3a3000, () => {
       if (gameOver) return;
       gameOver = true;
       this.closeEvent({ goldDelta: 10 });
     }, Math.round(W * 0.24), 56);
 
-    const takeBtn = this.makeButton(W * 0.01, H * 0.34, '받기', 0x1a5c1a, () => {
+    const takeBtn = this.makeButton(W * 0.01, H * 0.34, i18n.t('receive'), 0x1a5c1a, () => {
       if (gameOver) return;
       gameOver = true;
       this.closeEvent({ goldDelta: currentGold });
     }, Math.round(W * 0.16), 56);
     takeBtn.setVisible(false);
 
-    const flipBtn = this.makeButton(W * 0.20, H * 0.34, '뒤집기', 0x1a3a6c, () => {
+    const flipBtn = this.makeButton(W * 0.20, H * 0.34, i18n.t('flipCard'), 0x1a3a6c, () => {
       if (gameOver || currentIdx >= CARD_COUNT) return;
       const el = cards[currentIdx];
       const { g, qMark, icon, cx, cy } = cardSlots[currentIdx];
@@ -451,19 +491,19 @@ export default class NodeEventScene extends Phaser.Scene {
 
       if (currentIdx === 0) {
         baseElement = el;
-        statusText.setText(`기준 속성: ${this.elementName(el)}`).setColor('#ffdb58');
+        statusText.setText(`${i18n.t('baseAttrLabel')}: ${this.elementName(el)}`).setColor('#ffdb58');
         currentIdx++;
         return;
       }
 
       if (el === baseElement) {
         currentGold *= 2;
-        goldLabel.setText(`현재 골드: ${currentGold}G`);
-        statusText.setText(`같은 속성! ${currentGold}G`).setColor('#2ecc71');
+        goldLabel.setText(`${i18n.t('currentGoldLabel')}: ${currentGold}G`);
+        statusText.setText(i18n.f('sameAttr', { gold: currentGold })).setColor('#2ecc71');
         currentIdx++;
         if (currentIdx >= CARD_COUNT) {
           gameOver = true;
-          statusText.setText(`완주! 최종 골드: ${currentGold}G`).setColor('#f5cc4a');
+          statusText.setText(i18n.f('allFlipped', { gold: currentGold })).setColor('#f5cc4a');
           flipBtn.setVisible(false);
           takeBtn.setVisible(true);
         } else {
@@ -472,12 +512,12 @@ export default class NodeEventScene extends Phaser.Scene {
       } else {
         gameOver = true;
         currentGold = 0;
-        goldLabel.setText('현재 골드: 0G').setColor('#e74c3c');
-        statusText.setText('다른 속성! 골드 0G').setColor('#e74c3c');
+        goldLabel.setText(`${i18n.t('currentGoldLabel')}: 0G`).setColor('#e74c3c');
+        statusText.setText(i18n.t('diffAttr')).setColor('#e74c3c');
         flipBtn.setVisible(false);
         exitBtn.setVisible(false);
         takeBtn.setVisible(false);
-        const confirmBtn = this.makeButton(0, H * 0.34, '확인', 0x3a1a1a, () => {
+        const confirmBtn = this.makeButton(0, H * 0.34, i18n.t('confirm'), 0x3a1a1a, () => {
           this.closeEvent({ goldDelta: 0 });
         }, Math.round(W * 0.18), 56);
         this.root.add(confirmBtn);
@@ -487,7 +527,8 @@ export default class NodeEventScene extends Phaser.Scene {
     this.root.add([
       title, ruleText, divider, goldLabel,
       ...cardSlots.map(s => s.g),
-      ...cardSlots.map(s => s.lbl),
+      ...cardSlots.map(s => s.qMark),
+      ...cardSlots.map(s => s.icon),
       statusText, exitBtn, takeBtn, flipBtn,
     ]);
 
@@ -502,28 +543,46 @@ export default class NodeEventScene extends Phaser.Scene {
     const H = this.H;
     const W = this.W;
     const ELEMENTS: CardElement[] = ['water', 'fire', 'grass', 'lightning', 'earth'];
-    const symbols: Record<string, string> = {
-      water: '💧\n물', fire: '🔥\n불', grass: '🌿\n풀', lightning: '⚡\n번개', earth: '🪨\n땅',
-    };
-
-    const title   = this.makeTitle('🔄 대체 카드', -H * 0.35);
-    const desc    = this.makeBody(
-      '교환할 속성을 선택합니다.\n선택한 속성 카드 → 다른 속성 카드로 교환 (일반 속성 카드 불가)',
-      -H * 0.24,
-    );
+    const ATTR_IDX: Record<string, number> = { water:0, fire:1, grass:2, lightning:3, earth:4 };
+    const title   = this.makeHeader('row1_0', i18n.t('swapTitle'), -H * 0.35);
+    const desc    = this.makeBody(i18n.t('swapDesc'), -H * 0.24);
     const divider = this.makeDivider(-H * 0.16);
 
+    const BTN_SIZE = Math.round(W * 0.10);
     const GAP    = W * 0.12;
     const startX = -(ELEMENTS.length - 1) * GAP / 2;
-    const elBtns = ELEMENTS.map((el, i) =>
-      this.makeButton(startX + i * GAP, H * 0.02, symbols[el], 0x1a2a4a, () => {
+
+    // 속성 버튼: 아이콘 이미지 + 이름 텍스트, makeButton 대신 직접 컨테이너 구성
+    const elBtns = ELEMENTS.map((el, i) => {
+      const bx = startX + i * GAP;
+      const by = H * 0.04;
+      const cont = this.add.container(bx, by);
+      const bg = this.add.graphics();
+      bg.fillStyle(0x1a2a4a, 1);
+      bg.lineStyle(1, COLOR_GOLD, 0.5);
+      bg.fillRoundedRect(-BTN_SIZE / 2, -BTN_SIZE * 0.65, BTN_SIZE, BTN_SIZE * 1.3, 8);
+      bg.strokeRoundedRect(-BTN_SIZE / 2, -BTN_SIZE * 0.65, BTN_SIZE, BTN_SIZE * 1.3, 8);
+      const icon = this.add.image(0, -BTN_SIZE * 0.12, 'attr_icons', `attr_${ATTR_IDX[el]}`);
+      icon.setDisplaySize(BTN_SIZE * 0.55, BTN_SIZE * 0.55);
+      const lbl = this.add.text(0, BTN_SIZE * 0.38, this.elementName(el), {
+        fontFamily: FONT_M, fontSize: '14px', color: '#cccccc',
+      }).setOrigin(0.5);
+      cont.add([bg, icon, lbl]);
+      cont.setInteractive(
+        new Phaser.Geom.Rectangle(-BTN_SIZE / 2, -BTN_SIZE * 0.65, BTN_SIZE, BTN_SIZE * 1.3),
+        Phaser.Geom.Rectangle.Contains,
+      );
+      cont.on('pointerover', () => bg.setAlpha(1.3));
+      cont.on('pointerout',  () => bg.setAlpha(1));
+      cont.on('pointerdown', () => {
         const others = ELEMENTS.filter(e => e !== el);
         const to = others[Math.floor(Math.random() * others.length)];
         this.closeEvent({ swapFrom: el, swapTo: to });
-      }, Math.round(W * 0.10), 80),
-    );
+      });
+      return cont;
+    });
 
-    const skipBtn = this.makeButton(0, H * 0.32, '✖  그냥 지나침', 0x333333, () => {
+    const skipBtn = this.makeButton(0, H * 0.32, i18n.t('skip'), 0x333333, () => {
       this.closeEvent({ swapFrom: null });
     }, Math.round(W * 0.22), 52);
 
@@ -540,22 +599,19 @@ export default class NodeEventScene extends Phaser.Scene {
     const { playerHp } = this.data_;
     const canAccept    = playerHp > 5;
 
-    const title   = this.makeTitle('❤  하트 카드', -H * 0.32);
+    const title   = this.makeHeader('row1_1', i18n.t('heartTitle'), -H * 0.32);
     const divider = this.makeDivider(-H * 0.22);
-    const desc    = this.makeBody(
-      `HP를 5 잃는 대신\n덱의 카드 밸류를 ×1.3 영구 강화합니다.\n\n현재 HP: ${playerHp}`,
-      -H * 0.10,
-    );
+    const desc    = this.makeBody(i18n.f('heartDesc', { hp: playerHp }), -H * 0.10);
 
-    const warning = canAccept ? null : this.add.text(0, H * 0.10, '⚠ HP가 부족합니다! (HP > 5 필요)', {
+    const warning = canAccept ? null : this.add.text(0, H * 0.10, i18n.t('heartWarning'), {
       fontFamily: FONT_M, fontSize: '16px', color: '#e74c3c',
     }).setOrigin(0.5);
 
-    const acceptBtn = this.makeButton(-W * 0.13, H * 0.28, '✅ 수락  (HP -5)', 0x1a5c1a, () => {
+    const acceptBtn = this.makeButton(-W * 0.13, H * 0.28, i18n.t('heartAccept'), 0x1a5c1a, () => {
       this.closeEvent({ accepted: true, hpDelta: -5, cardValueMultiplier: 1.3 });
     }, Math.round(W * 0.24), 56);
 
-    const refuseBtn = this.makeButton(W * 0.13, H * 0.28, '✖  거절', 0x5c1a1a, () => {
+    const refuseBtn = this.makeButton(W * 0.13, H * 0.28, i18n.t('heartRefuse'), 0x5c1a1a, () => {
       this.closeEvent({ accepted: false });
     }, Math.round(W * 0.24), 56);
 
@@ -573,14 +629,11 @@ export default class NodeEventScene extends Phaser.Scene {
   private createShieldEvent() {
     const H = this.H;
 
-    const title   = this.makeTitle('🛡  방어 카드', -H * 0.28);
+    const title   = this.makeHeader('row1_2', i18n.t('shieldTitle'), -H * 0.28);
     const divider = this.makeDivider(-H * 0.18);
-    const desc    = this.makeBody(
-      '덱의 모든 방어(쉴드) 카드의\n쉴드량이 ×1.2 영구 증가합니다.',
-      -H * 0.04,
-    );
+    const desc    = this.makeBody(i18n.t('shieldDesc'), -H * 0.04);
 
-    const confirmBtn = this.makeButton(0, H * 0.28, '✅ 확인', 0x1a3a6c, () => {
+    const confirmBtn = this.makeButton(0, H * 0.28, i18n.t('confirm'), 0x1a3a6c, () => {
       this.closeEvent({ shieldMultiplier: 1.2 });
     }, Math.round(this.W * 0.22), 56);
 
@@ -595,26 +648,41 @@ export default class NodeEventScene extends Phaser.Scene {
     const H = this.H;
     const W = this.W;
     const ELEMENTS: CardElement[] = ['water', 'fire', 'grass', 'lightning', 'earth'];
-    const symbols: Record<string, string> = {
-      water: '💧\n물', fire: '🔥\n불', grass: '🌿\n풀', lightning: '⚡\n번개', earth: '🪨\n땅',
-    };
+    const ATTR_IDX: Record<string, number> = { water:0, fire:1, grass:2, lightning:3, earth:4 };
 
-    const title   = this.makeTitle('⭐  별 카드', -H * 0.32);
+    const title   = this.makeHeader('row1_3', i18n.t('starTitle'), -H * 0.32);
     const divider = this.makeDivider(-H * 0.22);
-    const desc    = this.makeBody(
-      '선택한 속성의 카드 중 하나의 별(등급)을 +1 올립니다.',
-      -H * 0.12,
-    );
+    const desc    = this.makeBody(i18n.t('starDesc'), -H * 0.12);
 
+    const BTN_SIZE = Math.round(W * 0.10);
     const GAP    = W * 0.12;
     const startX = -(ELEMENTS.length - 1) * GAP / 2;
-    const btns   = ELEMENTS.map((el, i) =>
-      this.makeButton(startX + i * GAP, H * 0.04, symbols[el], 0x2a1a4a, () => {
-        this.closeEvent({ starUpElement: el });
-      }, Math.round(W * 0.10), 80),
-    );
+    const btns = ELEMENTS.map((el, i) => {
+      const bx = startX + i * GAP;
+      const by = H * 0.04;
+      const cont = this.add.container(bx, by);
+      const bg = this.add.graphics();
+      bg.fillStyle(0x2a1a4a, 1);
+      bg.lineStyle(1, COLOR_GOLD, 0.5);
+      bg.fillRoundedRect(-BTN_SIZE / 2, -BTN_SIZE * 0.65, BTN_SIZE, BTN_SIZE * 1.3, 8);
+      bg.strokeRoundedRect(-BTN_SIZE / 2, -BTN_SIZE * 0.65, BTN_SIZE, BTN_SIZE * 1.3, 8);
+      const icon = this.add.image(0, -BTN_SIZE * 0.12, 'attr_icons', `attr_${ATTR_IDX[el]}`);
+      icon.setDisplaySize(BTN_SIZE * 0.55, BTN_SIZE * 0.55);
+      const lbl = this.add.text(0, BTN_SIZE * 0.38, this.elementName(el), {
+        fontFamily: FONT_M, fontSize: '14px', color: '#cccccc',
+      }).setOrigin(0.5);
+      cont.add([bg, icon, lbl]);
+      cont.setInteractive(
+        new Phaser.Geom.Rectangle(-BTN_SIZE / 2, -BTN_SIZE * 0.65, BTN_SIZE, BTN_SIZE * 1.3),
+        Phaser.Geom.Rectangle.Contains,
+      );
+      cont.on('pointerover', () => bg.setAlpha(1.3));
+      cont.on('pointerout',  () => bg.setAlpha(1));
+      cont.on('pointerdown', () => this.closeEvent({ starUpElement: el }));
+      return cont;
+    });
 
-    const skipBtn = this.makeButton(0, H * 0.32, '✖  그냥 지나침', 0x333333, () => {
+    const skipBtn = this.makeButton(0, H * 0.32, i18n.t('skip'), 0x333333, () => {
       this.closeEvent({ starUpElement: null });
     }, Math.round(W * 0.22), 52);
 
@@ -636,6 +704,7 @@ export default class NodeEventScene extends Phaser.Scene {
     let betAttempts  = 1;
     let winStreak    = 0;
     let gameEnded    = false;
+    let locked       = false; // 카드 공개 애니 중 버튼 잠금
 
     const gen = () => ({
       playerStars: Math.floor(Math.random() * 5) + 1,
@@ -644,20 +713,18 @@ export default class NodeEventScene extends Phaser.Scene {
     let cards = gen();
 
     // ── 고정 UI ──────────────────────────────────────────────────────────────
-    const title = this.makeTitle(
-      `❗  인디언 포커  (${this.elementName(mapElement)} 속성)`, -H * 0.38,
-    );
+    const title = this.makeHeader('row1_4', i18n.f('indianPokerTitle', { elem: this.elementName(mapElement) }), -H * 0.38);
     const divider = this.makeDivider(-H * 0.30);
 
-    const roundLabel = this.add.text(0, -H * 0.25, `라운드  ${currentRound} / ${TOTAL_ROUNDS}`, {
+    const roundLabel = this.add.text(0, -H * 0.25, `${i18n.t('round')}  ${currentRound} / ${TOTAL_ROUNDS}`, {
       fontFamily: FONT_B, fontSize: '22px', color: '#cccccc',
     }).setOrigin(0.5);
 
-    const tokenLabel = this.add.text(-W * 0.15, -H * 0.19, `포기 토큰: ${foldTokens}`, {
+    const tokenLabel = this.add.text(-W * 0.15, -H * 0.19, `${i18n.t('foldToken')}: ${foldTokens}`, {
       fontFamily: FONT_M, fontSize: '16px', color: '#aaaaaa',
     }).setOrigin(0.5);
 
-    const attemptLabel = this.add.text(W * 0.15, -H * 0.19, `남은 기회: ${betAttempts}`, {
+    const attemptLabel = this.add.text(W * 0.15, -H * 0.19, `${i18n.t('remainChance')}: ${betAttempts}`, {
       fontFamily: FONT_M, fontSize: '16px', color: '#aaaaaa',
     }).setOrigin(0.5);
 
@@ -675,7 +742,7 @@ export default class NodeEventScene extends Phaser.Scene {
     const aiStarTxt = this.add.text(-W * 0.12, cardY, `★ ${cards.aiStars}`, {
       fontFamily: FONT_B, fontSize: '28px', color: '#f5cc4a',
     }).setOrigin(0.5);
-    const aiLbl = this.add.text(-W * 0.12, cardY + CARD_H * 0.6, '상대방', {
+    const aiLbl = this.add.text(-W * 0.12, cardY + CARD_H * 0.6, i18n.t('opponent'), {
       fontFamily: FONT_L, fontSize: '14px', color: '#aaaaaa',
     }).setOrigin(0.5);
 
@@ -688,125 +755,197 @@ export default class NodeEventScene extends Phaser.Scene {
     const myCardTxt = this.add.text(W * 0.12, cardY, '?', {
       fontFamily: FONT_B, fontSize: '36px', color: '#6699cc',
     }).setOrigin(0.5);
-    const myLbl = this.add.text(W * 0.12, cardY + CARD_H * 0.6, '나 (뒤집힘)', {
+    const myLbl = this.add.text(W * 0.12, cardY + CARD_H * 0.6, i18n.t('myCardHidden'), {
       fontFamily: FONT_L, fontSize: '14px', color: '#aaaaaa',
     }).setOrigin(0.5);
 
-    const statusTxt = this.add.text(0, H * 0.17, '배팅 또는 배팅 포기를 선택하세요.', {
+    const statusTxt = this.add.text(0, H * 0.17, i18n.t('betOrFold'), {
       fontFamily: FONT_M, fontSize: '17px', color: '#cccccc',
     }).setOrigin(0.5);
 
-    const winLbl = this.add.text(0, H * 0.24, '확보 가능 카드: 없음', {
+    const winLbl = this.add.text(0, H * 0.24, `${i18n.t('obtainableCard')}: ${i18n.t('none')}`, {
       fontFamily: FONT_M, fontSize: '16px', color: '#f5cc4a',
     }).setOrigin(0.5);
 
     // ── 라운드 갱신 ──────────────────────────────────────────────────────────
     const refresh = () => {
-      roundLabel.setText(`라운드  ${currentRound} / ${TOTAL_ROUNDS}`);
-      tokenLabel.setText(`포기 토큰: ${foldTokens}`);
-      attemptLabel.setText(`남은 기회: ${betAttempts}`);
+      roundLabel.setText(`${i18n.t('round')}  ${currentRound} / ${TOTAL_ROUNDS}`);
+      tokenLabel.setText(`${i18n.t('foldToken')}: ${foldTokens}`);
+      attemptLabel.setText(`${i18n.t('remainChance')}: ${betAttempts}`);
       aiStarTxt.setText(`★ ${cards.aiStars}`);
-      winLbl.setText(`확보 가능 카드: ${winStreak > 0 ? `★ ${winStreak}` : '없음'}`);
+      winLbl.setText(`${i18n.t('obtainableCard')}: ${winStreak > 0 ? `★ ${winStreak}` : i18n.t('none')}`);
     };
 
-    const BW = Math.round(W * 0.18);
-    const BY = H * 0.36;
+    const BW  = Math.round(W * 0.20); // 버튼 너비
+    const BG  = Math.round(W * 0.03); // 버튼 간격
+    const BY  = H * 0.36;
 
-    // ── 10G 받고 나가기 (항상 보임) ──────────────────────────────────────────
-    const earlyExitBtn = this.makeButton(-W * 0.30, BY, '💰 10G 받고 나가기', 0x3a3000, () => {
+    // 배팅 단계: 3개 버튼 균등 배치 (중앙 정렬)
+    // earlyExit | betBtn | foldBtn
+    const B3_LEFT  = -(BW + BG);  // 왼쪽 버튼 중심
+    const B3_MID   = 0;           // 가운데
+    const B3_RIGHT = BW + BG;     // 오른쪽
+    void B3_MID; void B3_RIGHT;   // 사용 안 함 경고 억제
+
+    // 확인 단계: 2개 버튼 중앙 정렬
+    const B2_LEFT  = -(BW / 2 + BG / 2);
+    const B2_RIGHT =  (BW / 2 + BG / 2);
+
+    // ── 10G 받고 나가기 (배팅 단계에서만 보임) ───────────────────────────────
+    const earlyExitBtn = this.makeButton(B3_LEFT, BY, i18n.t('exitWithGold'), 0x3a3000, () => {
       if (gameEnded) return;
       gameEnded = true;
       this.closeEvent({ goldDelta: 10 });
-    }, Math.round(W * 0.22), 56);
+    }, BW, 52);
 
-    // ── 지금 받기 / 계속 버튼 (처음엔 숨김) ─────────────────────────────────
-    const takeNowBtn = this.makeButton(-W * 0.08, BY, '✅ 받기', 0x1a5c1a, () => {
+    // ── 받기 / 계속 버튼 (승리 후 확인 단계) ────────────────────────────────
+    const takeNowBtn = this.makeButton(B2_LEFT, BY, i18n.t('receive'), 0x1a5c1a, () => {
       gameEnded = true;
       this.closeEvent({ pokerCard: winStreak });
-    }, BW, 56).setVisible(false) as Phaser.GameObjects.Container;
+    }, BW, 52).setVisible(false) as Phaser.GameObjects.Container;
 
-    const continueBtn = this.makeButton(W * 0.08, BY, '▶ 계속', 0x1a3a6c, () => {
+    const continueBtn = this.makeButton(B2_RIGHT, BY, i18n.t('continueBtn'), 0x1a3a6c, () => {
       takeNowBtn.setVisible(false);
       continueBtn.setVisible(false);
-      betBtn.setVisible(true);
-      foldBtn.setVisible(true);
-      statusTxt.setText('배팅 또는 배팅 포기를 선택하세요.').setColor('#cccccc');
+      earlyExitBtn.setVisible(true);
+      myCardTxt.setText('?').setColor('#6699cc'); myLbl.setText(i18n.t('myCardHidden'));
+      locked = false; betBtn.setAlpha(1).setVisible(true); foldBtn.setAlpha(1).setVisible(true);
+      statusTxt.setText(i18n.t('betOrFold')).setColor('#cccccc');
       refresh();
-    }, BW, 56).setVisible(false) as Phaser.GameObjects.Container;
+    }, BW, 52).setVisible(false) as Phaser.GameObjects.Container;
 
     const promptTake = (onContinue: () => void) => {
       if (winStreak === 0 || currentRound > TOTAL_ROUNDS) { onContinue(); return; }
-      statusTxt.setText(`★ ${winStreak}성 카드를 받고 끝내시겠습니까?`).setColor('#f5cc4a');
+      statusTxt.setText(i18n.f('pokerTakeConfirm', { n: winStreak })).setColor('#f5cc4a');
+      earlyExitBtn.setVisible(false);
       betBtn.setVisible(false);
       foldBtn.setVisible(false);
       takeNowBtn.setVisible(true);
       continueBtn.setVisible(true);
     };
 
-    // ── 배팅 버튼 ─────────────────────────────────────────────────────────────
-    const betBtn = this.makeButton(-W * 0.08, BY, '💰 배팅', 0x1a5c1a, () => {
-      if (gameEnded) return;
-      const res = cards.playerStars > cards.aiStars ? 'win'
-                : cards.playerStars < cards.aiStars ? 'lose' : 'draw';
+    // ── 카드 공개 후 결과 처리 (배팅 시 호출) ────────────────────────────────
+    const revealAndResolve = () => {
+      locked = true;
+      betBtn.setAlpha(0.4); foldBtn.setAlpha(0.4);
 
-      if (res === 'win') {
-        winStreak++;
-        currentRound++;
-        foldTokens = 1; betAttempts = 1;
-        statusTxt.setText(`✅ 승리! ★${winStreak} 카드 확보 가능`).setColor('#2ecc71');
+      // 1단계: 내 카드 공개 (플래시 + 별 표시)
+      myCardTxt.setText(`★ ${cards.playerStars}`).setColor('#f5cc4a');
+      myLbl.setText(i18n.t('myCardRevealed'));
+      this.tweens.add({ targets: myCardTxt, scaleX: 1.3, scaleY: 1.3, duration: 180, yoyo: true, ease: 'Power2' });
+      statusTxt.setText(i18n.t('cardReveal')).setColor('#cccccc');
 
-        if (currentRound > TOTAL_ROUNDS) {
-          gameEnded = true;
-          statusTxt.setText(`🎉 전승! ★${winStreak}성 카드 획득!`).setColor('#f5cc4a');
-          betBtn.setVisible(false); foldBtn.setVisible(false);
-          this.time.delayedCall(1400, () => this.closeEvent({ pokerCard: winStreak }));
-          return;
-        }
-        cards = gen();
-        promptTake(() => {
-          statusTxt.setText('배팅 또는 배팅 포기를 선택하세요.').setColor('#cccccc');
-          betBtn.setVisible(true); foldBtn.setVisible(true);
+      // 2단계: 잠시 후 결과 표시
+      this.time.delayedCall(700, () => {
+        const res = cards.playerStars > cards.aiStars ? 'win'
+                  : cards.playerStars < cards.aiStars ? 'lose' : 'draw';
+
+        if (res === 'win') {
+          winStreak++;
+          currentRound++;
+          foldTokens = 1; betAttempts = 1;
+          statusTxt.setText(i18n.f('pokerWin', { n: winStreak })).setColor('#2ecc71');
           refresh();
-        });
 
-      } else if (res === 'draw') {
-        statusTxt.setText('🤝 동점! 라운드 재시작').setColor('#ffdb58');
-        cards = gen(); aiStarTxt.setText(`★ ${cards.aiStars}`);
+          if (currentRound > TOTAL_ROUNDS) {
+            gameEnded = true;
+            statusTxt.setText(i18n.f('pokerSweep', { n: winStreak })).setColor('#f5cc4a');
+            betBtn.setVisible(false); foldBtn.setVisible(false); earlyExitBtn.setVisible(false);
+            this.time.delayedCall(1800, () => this.closeEvent({ pokerCard: winStreak }));
+            return;
+          }
 
-      } else {
-        betAttempts--;
-        attemptLabel.setText(`남은 기회: ${betAttempts}`);
-        statusTxt.setText('❌ 패배! 기회 -1').setColor('#e74c3c');
-        if (betAttempts <= 0) {
-          gameEnded = true;
-          betBtn.setVisible(false); foldBtn.setVisible(false);
-          statusTxt.setText('기회 소진. 이벤트 종료').setColor('#e74c3c');
-          this.time.delayedCall(1400, () => this.closeEvent({ pokerCard: 0 }));
+          // 3단계: 다음 라운드로 넘어가기 전 대기
+          this.time.delayedCall(1400, () => {
+            cards = gen();
+            myCardTxt.setText('?').setColor('#6699cc');
+            myLbl.setText(i18n.t('myCardHidden'));
+            aiStarTxt.setText(`★ ${cards.aiStars}`);
+            locked = false; betBtn.setAlpha(1); foldBtn.setAlpha(1);
+            promptTake(() => {
+              statusTxt.setText(i18n.t('betOrFold')).setColor('#cccccc');
+              betBtn.setVisible(true); foldBtn.setVisible(true);
+              refresh();
+            });
+          });
+
+        } else if (res === 'draw') {
+          statusTxt.setText(i18n.t('pokerDraw')).setColor('#ffdb58');
+          this.time.delayedCall(1200, () => {
+            cards = gen();
+            myCardTxt.setText('?').setColor('#6699cc');
+            myLbl.setText(i18n.t('myCardHidden'));
+            aiStarTxt.setText(`★ ${cards.aiStars}`);
+            locked = false; betBtn.setAlpha(1); foldBtn.setAlpha(1);
+            statusTxt.setText(i18n.t('betOrFold')).setColor('#cccccc');
+          });
+
         } else {
-          cards = gen(); aiStarTxt.setText(`★ ${cards.aiStars}`);
+          betAttempts--;
+          statusTxt.setText(i18n.f('pokerLose', { n: betAttempts })).setColor('#e74c3c');
+          attemptLabel.setText(`${i18n.t('remainChance')}: ${betAttempts}`);
+
+          if (betAttempts <= 0) {
+            gameEnded = true;
+            betBtn.setVisible(false); foldBtn.setVisible(false); earlyExitBtn.setVisible(false);
+            this.time.delayedCall(1400, () => {
+              statusTxt.setText(i18n.t('pokerExhausted')).setColor('#e74c3c');
+              this.time.delayedCall(1200, () => this.closeEvent({ pokerCard: 0 }));
+            });
+          } else {
+            this.time.delayedCall(1200, () => {
+              cards = gen();
+              myCardTxt.setText('?').setColor('#6699cc');
+              myLbl.setText(i18n.t('myCardHidden'));
+              aiStarTxt.setText(`★ ${cards.aiStars}`);
+              locked = false; betBtn.setAlpha(1); foldBtn.setAlpha(1);
+              statusTxt.setText(i18n.t('betOrFold')).setColor('#cccccc');
+            });
+          }
         }
-      }
-    }, BW, 56);
+      });
+    };
+
+    // ── 배팅 버튼 ─────────────────────────────────────────────────────────────
+    const betBtn = this.makeButton(B3_MID, BY, i18n.t('bet'), 0x1a5c1a, () => {
+      if (gameEnded || locked) return;
+      revealAndResolve();
+    }, BW, 52);
 
     // ── 배팅 포기 버튼 ────────────────────────────────────────────────────────
-    const foldBtn = this.makeButton(W * 0.20, BY, '✋ 배팅 포기', 0x5c3a1a, () => {
-      if (gameEnded) return;
-      if (cards.playerStars === 5) {
-        gameEnded = true;
-        statusTxt.setText('5성 카드를 들고 배팅 포기! 이벤트 종료').setColor('#e74c3c');
-        betBtn.setVisible(false); foldBtn.setVisible(false);
-        this.time.delayedCall(1400, () => this.closeEvent({ pokerCard: 0 }));
-        return;
-      }
+    const foldBtn = this.makeButton(B3_RIGHT, BY, i18n.t('pokerFold'), 0x5c3a1a, () => {
+      if (gameEnded || locked) return;
       if (foldTokens <= 0) {
-        statusTxt.setText('⚠ 배팅 포기 토큰 없음!').setColor('#e74c3c');
+        statusTxt.setText(i18n.t('noFoldToken')).setColor('#e74c3c');
         return;
       }
+      // 내 카드 공개 후 포기 처리
+      locked = true;
+      betBtn.setAlpha(0.4); foldBtn.setAlpha(0.4);
+      myCardTxt.setText(`★ ${cards.playerStars}`).setColor('#aaaaaa');
+      myLbl.setText(i18n.t('myCardRevealed'));
+      this.tweens.add({ targets: myCardTxt, scaleX: 1.2, scaleY: 1.2, duration: 150, yoyo: true });
+
+      if (cards.playerStars === 5) {
+        statusTxt.setText(i18n.t('pokerFiveStarFold')).setColor('#e74c3c');
+        this.time.delayedCall(900, () => {
+          myCardTxt.setText('?').setColor('#6699cc'); myLbl.setText(i18n.t('myCardHidden'));
+          locked = false; betBtn.setAlpha(1); foldBtn.setAlpha(1);
+          statusTxt.setText(i18n.t('betOrFold')).setColor('#cccccc');
+        });
+        return;
+      }
+
       foldTokens--;
-      cards = gen();
-      aiStarTxt.setText(`★ ${cards.aiStars}`);
-      tokenLabel.setText(`포기 토큰: ${foldTokens}`);
-      statusTxt.setText(`배팅 포기 (토큰 ${foldTokens}개 남음)`).setColor('#aaaaaa');
+      statusTxt.setText(i18n.f('pokerFolded', { n: foldTokens })).setColor('#aaaaaa');
+      this.time.delayedCall(900, () => {
+        cards = gen();
+        myCardTxt.setText('?').setColor('#6699cc'); myLbl.setText(i18n.t('myCardHidden'));
+        aiStarTxt.setText(`★ ${cards.aiStars}`);
+        tokenLabel.setText(`${i18n.t('foldToken')}: ${foldTokens}`);
+        locked = false; betBtn.setAlpha(1); foldBtn.setAlpha(1);
+        statusTxt.setText(i18n.t('betOrFold')).setColor('#cccccc');
+      });
     }, BW, 56);
 
     this.root.add([
@@ -831,16 +970,25 @@ export default class NodeEventScene extends Phaser.Scene {
     const elName   = BOSS_ELEMENT_NAME[nodeType] ?? '???';
 
     const bossNames: Partial<Record<number, string>> = {
-      [NODE_TYPE.BOSS_WATER]:     '해룡왕  아쿠아리스',
-      [NODE_TYPE.BOSS_FIRE]:      '화염군주  이그니스',
-      [NODE_TYPE.BOSS_GRASS]:     '대수목  실바나',
-      [NODE_TYPE.BOSS_LIGHTNING]: '뇌신  토르무스',
-      [NODE_TYPE.BOSS_EARTH]:     '대지의 왕  테라',
-      [NODE_TYPE.BOSS_FINAL]:     '혼돈의 군주  카오스',
+      [NODE_TYPE.BOSS_WATER]:     i18n.t('bossNameWater'),
+      [NODE_TYPE.BOSS_FIRE]:      i18n.t('bossNameFire'),
+      [NODE_TYPE.BOSS_GRASS]:     i18n.t('bossNameGrass'),
+      [NODE_TYPE.BOSS_LIGHTNING]: i18n.t('bossNameLightning'),
+      [NODE_TYPE.BOSS_EARTH]:     i18n.t('bossNameEarth'),
+      [NODE_TYPE.BOSS_FINAL]:     i18n.t('bossNameFinal'),
     };
 
-    const title    = this.makeTitle(
-      `💀  ${elName} 보스 등장`, -H * 0.32,
+    // 보스 타입별 프레임
+    const bossFrame: Partial<Record<number, string>> = {
+      [NODE_TYPE.BOSS_WATER]: 'row2_0', [NODE_TYPE.BOSS_FIRE]: 'row2_1',
+      [NODE_TYPE.BOSS_GRASS]: 'row2_2', [NODE_TYPE.BOSS_LIGHTNING]: 'row3_0',
+      [NODE_TYPE.BOSS_EARTH]: 'row3_1', [NODE_TYPE.BOSS_FINAL]: 'row3_2',
+    };
+    const title = this.makeHeader(
+      bossFrame[nodeType] ?? 'row2_0',
+      i18n.f('bossAppear', { elem: elName }),
+      -H * 0.32,
+      72,
       isFinal ? '#ff4444' : '#d4af37',
     );
     const divider  = this.makeDivider(-H * 0.22);
@@ -848,15 +996,15 @@ export default class NodeEventScene extends Phaser.Scene {
       fontFamily: FONT_B, fontSize: '32px', color: '#ffffff',
     }).setOrigin(0.5);
     const infoTxt  = this.makeBody(
-      `${rounds}라운드 전투\n보스를 쓰러뜨리면 고유 보상을 획득합니다.`,
+      i18n.f('bossRoundInfo', { rounds }),
       H * 0.02,
     );
     const statsText = this.add.text(0, H * 0.14,
-      `HP ${playerHp}/${playerMaxHp}   공격 ${playerAtk}   방어 ${playerDef}   치명 ${playerCrit}%`,
+      i18n.f('bossStats', { hp: playerHp, maxHp: playerMaxHp, atk: playerAtk, def: playerDef, crit: playerCrit }),
       { fontFamily: FONT_L, fontSize: '15px', color: '#aaaaaa' },
     ).setOrigin(0.5);
 
-    const startBtn = this.makeButton(0, H * 0.28, '⚔  전투 시작', 0x8b0000, () => {
+    const startBtn = this.makeButton(0, H * 0.28, i18n.t('bossStartFight'), 0x8b0000, () => {
       this.closeEvent({ bossResult: 'win', bossType: nodeType });
     }, Math.round(W * 0.32), 64);
 

@@ -91,7 +91,9 @@ const STAT_MAX = { hp: 200, def: 50, atk: 100, crit: 100, critDmg: 2.5 };
 // ─── 씬 ───────────────────────────────────────────────────────────────────────
 
 export default class CharacterSelectScene extends Phaser.Scene {
-  private selectedIndex = 0;
+  private selectedIndex   = 0;
+  private allEquipment:   string[] = [];
+  private selectedEquip:  string | null = null;
 
   /** 각 카드(배경 Graphics + Container) */
   private cardGraphics:   Phaser.GameObjects.Graphics[]  = [];
@@ -111,8 +113,20 @@ export default class CharacterSelectScene extends Phaser.Scene {
   // Phaser 라이프사이클
   // ─────────────────────────────────────────────────────────────────────────────
 
-  create() {
+  async create() {
     const { width, height } = this.scale;
+
+    // legacy 장비 컬렉션 로드
+    // @ts-ignore
+    if (typeof require !== 'undefined') {
+      try {
+        const { ipcRenderer } = require('electron');
+        const res = await ipcRenderer.invoke('load-legacy');
+        if (res.success && res.data) {
+          this.allEquipment = res.data.allEquipment ?? [];
+        }
+      } catch {}
+    }
 
     this.buildBackground(width, height);
     this.cameras.main.fadeIn(250, 0, 0, 0);
@@ -122,6 +136,7 @@ export default class CharacterSelectScene extends Phaser.Scene {
     const layout = this.calcLayout(width, height);
     this.buildCharacterCards(layout);
     this.buildDetailPanel(layout);
+    this.buildEquipmentPanel(width, height, layout);
     this.buildButtons(width, height);
 
     this.selectCharacter(0);
@@ -302,6 +317,80 @@ export default class CharacterSelectScene extends Phaser.Scene {
     this.detailPanel.add([bg, nameText, descText, divider, statG, ...labelTexts]);
   }
 
+  private buildEquipmentPanel(_width: number, height: number, layout: ReturnType<typeof this.calcLayout>) {
+    const { panelX, panelY, panelW, panelH } = layout;
+    const panelBottom = panelY + panelH;
+    const btnAreaTop  = height - 68;
+    const sectionH    = Math.max(54, Math.min(btnAreaTop - panelBottom - 8, 80));
+    const sectionY    = panelBottom + 6;
+
+    // 섹션 배경
+    const secBg = this.add.graphics();
+    secBg.fillStyle(0x10101e, 0.92);
+    secBg.lineStyle(1, 0xd4af37, 0.3);
+    secBg.fillRoundedRect(panelX, sectionY, panelW, sectionH, 8);
+    secBg.strokeRoundedRect(panelX, sectionY, panelW, sectionH, 8);
+
+    // 레이블
+    this.add.text(panelX + 14, sectionY + sectionH / 2, i18n.t('startEquip'), {
+      fontFamily: 'SBAggroB', fontSize: '13px', color: '#d4af37',
+    }).setOrigin(0, 0.5);
+
+    const labelW  = 70;
+    const btnH    = sectionH - 16;
+    const btnW    = 140;
+    const gap     = 8;
+    const startX  = panelX + labelW + 10;
+
+    if (this.allEquipment.length === 0) {
+      this.add.text(startX, sectionY + sectionH / 2,
+        i18n.t('noEquipCollected'), {
+          fontFamily: 'SBAggroL', fontSize: '12px', color: '#555555',
+        }).setOrigin(0, 0.5);
+      return;
+    }
+
+    // 다시 그리기 함수 목록 (선택 변경 시 전부 호출)
+    const redraws: (() => void)[] = [];
+
+    this.allEquipment.forEach((eq, i) => {
+      const bx   = startX + i * (btnW + gap);
+      const by   = sectionY + sectionH / 2;
+      const cont = this.add.container(bx + btnW / 2, by);
+
+      const bg  = this.add.graphics();
+      const lbl = this.add.text(0, 0, eq, {
+        fontFamily: 'SBAggroM', fontSize: '12px', color: '#cccccc',
+        align: 'center', wordWrap: { width: btnW - 16 },
+      }).setOrigin(0.5);
+
+      const redraw = () => {
+        const sel = this.selectedEquip === eq;
+        bg.clear();
+        bg.fillStyle(sel ? 0x3a2800 : 0x1a1a2e, 1);
+        bg.lineStyle(sel ? 2 : 1, sel ? 0xd4af37 : 0x444466, 1);
+        bg.fillRoundedRect(-btnW / 2, -btnH / 2, btnW, btnH, 7);
+        bg.strokeRoundedRect(-btnW / 2, -btnH / 2, btnW, btnH, 7);
+        lbl.setColor(sel ? '#f5cc4a' : '#cccccc');
+      };
+      redraw();
+      redraws.push(redraw);
+
+      cont.add([bg, lbl]);
+      cont.setSize(btnW, btnH);
+      cont.setInteractive({ useHandCursor: true });
+
+      cont.on('pointerover', () => {
+        if (this.selectedEquip !== eq) bg.setAlpha(1.4);
+      });
+      cont.on('pointerout', () => bg.setAlpha(1));
+      cont.on('pointerdown', () => {
+        this.selectedEquip = this.selectedEquip === eq ? null : eq;
+        redraws.forEach(fn => fn());
+      });
+    });
+  }
+
   private buildButtons(width: number, height: number) {
     // 게임 시작
     this.startBtn = this.add.text(width / 2, height - 38, i18n.t('startGame'), {
@@ -318,7 +407,11 @@ export default class CharacterSelectScene extends Phaser.Scene {
       const char = CHARACTERS[this.selectedIndex];
       this.cameras.main.fadeOut(200, 0, 0, 0);
       this.cameras.main.once('camerafadeoutcomplete', () => {
-        this.scene.start('MainScene', { isContinue: false, character: char });
+        this.scene.start('MainScene', {
+          isContinue: false,
+          character: char,
+          startEquipment: this.selectedEquip ? [this.selectedEquip] : [],
+        });
       });
     });
 
