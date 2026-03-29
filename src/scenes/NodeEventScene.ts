@@ -285,12 +285,7 @@ export default class NodeEventScene extends Phaser.Scene {
       ),
     );
 
-    const lastBtnY = startY + (passives.length - 1) * BTN_SPACING;
-    const skipBtn = this.makeButton(0, lastBtnY + BTN_SPACING * 0.85, i18n.t('skipGold'), 0x3a3000, () => {
-      this.closeEvent({ goldDelta: 10 });
-    }, Math.round(W * 0.30), 44);
-
-    this.root.add([title, desc, divider, ...btns, skipBtn]);
+    this.root.add([title, desc, divider, ...btns]);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -370,11 +365,7 @@ export default class NodeEventScene extends Phaser.Scene {
         }, Math.round(W * 0.46), 56);
       });
 
-      const cancelBtn = this.makeButton(0, H * 0.33, i18n.t('cancelGold'), 0x3a3000, () => {
-        this.closeEvent({ goldDelta: 10 });
-      }, Math.round(W * 0.30), 48);
-
-      this.root.add([replaceTitle, newLbl, div2, ...replaceBtns, cancelBtn]);
+      this.root.add([replaceTitle, newLbl, div2, ...replaceBtns]);
     };
 
     const btns = drawn.map((equip, i) =>
@@ -397,11 +388,7 @@ export default class NodeEventScene extends Phaser.Scene {
       return;
     }
 
-    const skipBtn = this.makeButton(0, H * 0.37, i18n.t('skipGold'), 0x3a3000, () => {
-      this.closeEvent({ goldDelta: 10 });
-    }, Math.round(W * 0.30), 48);
-
-    this.root.add([title, slotLbl, desc, divider, ...btns, skipBtn]);
+    this.root.add([title, slotLbl, desc, divider, ...btns]);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -582,11 +569,7 @@ export default class NodeEventScene extends Phaser.Scene {
       return cont;
     });
 
-    const skipBtn = this.makeButton(0, H * 0.32, i18n.t('skip'), 0x333333, () => {
-      this.closeEvent({ swapFrom: null });
-    }, Math.round(W * 0.22), 52);
-
-    this.root.add([title, desc, divider, ...elBtns, skipBtn]);
+    this.root.add([title, desc, divider, ...elBtns]);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -682,11 +665,7 @@ export default class NodeEventScene extends Phaser.Scene {
       return cont;
     });
 
-    const skipBtn = this.makeButton(0, H * 0.32, i18n.t('skip'), 0x333333, () => {
-      this.closeEvent({ starUpElement: null });
-    }, Math.round(W * 0.22), 52);
-
-    this.root.add([title, divider, desc, ...btns, skipBtn]);
+    this.root.add([title, divider, desc, ...btns]);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -780,23 +759,9 @@ export default class NodeEventScene extends Phaser.Scene {
     const BG  = Math.round(W * 0.03); // 버튼 간격
     const BY  = H * 0.36;
 
-    // 배팅 단계: 3개 버튼 균등 배치 (중앙 정렬)
-    // earlyExit | betBtn | foldBtn
-    const B3_LEFT  = -(BW + BG);  // 왼쪽 버튼 중심
-    const B3_MID   = 0;           // 가운데
-    const B3_RIGHT = BW + BG;     // 오른쪽
-    void B3_MID; void B3_RIGHT;   // 사용 안 함 경고 억제
-
-    // 확인 단계: 2개 버튼 중앙 정렬
+    // 2개 버튼 중앙 정렬 (배팅/확인 단계 공통)
     const B2_LEFT  = -(BW / 2 + BG / 2);
     const B2_RIGHT =  (BW / 2 + BG / 2);
-
-    // ── 10G 받고 나가기 (배팅 단계에서만 보임) ───────────────────────────────
-    const earlyExitBtn = this.makeButton(B3_LEFT, BY, i18n.t('exitWithGold'), 0x3a3000, () => {
-      if (gameEnded) return;
-      gameEnded = true;
-      this.closeEvent({ goldDelta: 10 });
-    }, BW, 52);
 
     // ── 받기 / 계속 버튼 (승리 후 확인 단계) ────────────────────────────────
     const takeNowBtn = this.makeButton(B2_LEFT, BY, i18n.t('receive'), 0x1a5c1a, () => {
@@ -807,7 +772,6 @@ export default class NodeEventScene extends Phaser.Scene {
     const continueBtn = this.makeButton(B2_RIGHT, BY, i18n.t('continueBtn'), 0x1a3a6c, () => {
       takeNowBtn.setVisible(false);
       continueBtn.setVisible(false);
-      earlyExitBtn.setVisible(true);
       myCardTxt.setText('?').setColor('#6699cc'); myLbl.setText(i18n.t('myCardHidden'));
       locked = false; betBtn.setAlpha(1).setVisible(true); foldBtn.setAlpha(1).setVisible(true);
       statusTxt.setText(i18n.t('betOrFold')).setColor('#cccccc');
@@ -817,7 +781,6 @@ export default class NodeEventScene extends Phaser.Scene {
     const promptTake = (onContinue: () => void) => {
       if (winStreak === 0 || currentRound > TOTAL_ROUNDS) { onContinue(); return; }
       statusTxt.setText(i18n.f('pokerTakeConfirm', { n: winStreak })).setColor('#f5cc4a');
-      earlyExitBtn.setVisible(false);
       betBtn.setVisible(false);
       foldBtn.setVisible(false);
       takeNowBtn.setVisible(true);
@@ -850,7 +813,7 @@ export default class NodeEventScene extends Phaser.Scene {
           if (currentRound > TOTAL_ROUNDS) {
             gameEnded = true;
             statusTxt.setText(i18n.f('pokerSweep', { n: winStreak })).setColor('#f5cc4a');
-            betBtn.setVisible(false); foldBtn.setVisible(false); earlyExitBtn.setVisible(false);
+            betBtn.setVisible(false); foldBtn.setVisible(false);
             this.time.delayedCall(1800, () => this.closeEvent({ pokerCard: winStreak }));
             return;
           }
@@ -887,7 +850,7 @@ export default class NodeEventScene extends Phaser.Scene {
 
           if (betAttempts <= 0) {
             gameEnded = true;
-            betBtn.setVisible(false); foldBtn.setVisible(false); earlyExitBtn.setVisible(false);
+            betBtn.setVisible(false); foldBtn.setVisible(false);
             this.time.delayedCall(1400, () => {
               statusTxt.setText(i18n.t('pokerExhausted')).setColor('#e74c3c');
               this.time.delayedCall(1200, () => this.closeEvent({ pokerCard: 0 }));
@@ -907,13 +870,13 @@ export default class NodeEventScene extends Phaser.Scene {
     };
 
     // ── 배팅 버튼 ─────────────────────────────────────────────────────────────
-    const betBtn = this.makeButton(B3_MID, BY, i18n.t('bet'), 0x1a5c1a, () => {
+    const betBtn = this.makeButton(B2_LEFT, BY, i18n.t('bet'), 0x1a5c1a, () => {
       if (gameEnded || locked) return;
       revealAndResolve();
     }, BW, 52);
 
     // ── 배팅 포기 버튼 ────────────────────────────────────────────────────────
-    const foldBtn = this.makeButton(B3_RIGHT, BY, i18n.t('pokerFold'), 0x5c3a1a, () => {
+    const foldBtn = this.makeButton(B2_RIGHT, BY, i18n.t('pokerFold'), 0x5c3a1a, () => {
       if (gameEnded || locked) return;
       if (foldTokens <= 0) {
         statusTxt.setText(i18n.t('noFoldToken')).setColor('#e74c3c');
@@ -953,7 +916,7 @@ export default class NodeEventScene extends Phaser.Scene {
       aiCardG, aiStarTxt, aiLbl,
       myCardG, myCardTxt, myLbl,
       statusTxt, winLbl,
-      earlyExitBtn, betBtn, foldBtn, takeNowBtn, continueBtn,
+      betBtn, foldBtn, takeNowBtn, continueBtn,
     ]);
   }
 
