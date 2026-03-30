@@ -1163,6 +1163,8 @@ export default class MainScene extends Phaser.Scene {
       playerCritDmg:   this.playerCritDmg,
       playerEquipment: [...this.playerEquipment],
       maxEquipSlots:   this.maxEquipSlots,
+      characterWeapon: this.character?.weapon ?? 'swordShield',
+      deck:            this.playerDeck.map(e => ({ cardId: e.card.id, count: e.count })),
     });
 
     this.game.events.once('nodeEventComplete', (result: Record<string, unknown>) => {

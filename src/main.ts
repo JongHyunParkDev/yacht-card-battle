@@ -6,13 +6,14 @@ import SettingsScene from './scenes/SettingsScene';
 import CharacterSelectScene from './scenes/CharacterSelectScene';
 import CardGalleryScene from './scenes/CardGalleryScene';
 import NodeEventScene from './scenes/NodeEventScene';
+import BattleScene from './scenes/BattleScene';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   width: window.innerWidth,
   height: window.innerHeight,
   parent: 'game-container',
-  scene: [PreloadScene, IntroScene, CharacterSelectScene, MainScene, SettingsScene, CardGalleryScene, NodeEventScene],
+  scene: [PreloadScene, IntroScene, CharacterSelectScene, MainScene, SettingsScene, CardGalleryScene, NodeEventScene, BattleScene],
   scale: {
     mode: Phaser.Scale.RESIZE,
     autoCenter: Phaser.Scale.CENTER_BOTH

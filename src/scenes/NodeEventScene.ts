@@ -7,22 +7,26 @@ import {
   EQUIP_GRADE_LABEL, EQUIP_GRADE_COLOR,
   type EquipmentData,
 } from '@src/data/equipmentData';
+import type { WeaponType } from '@src/scenes/CharacterSelectScene';
 
 // ─── 이벤트 데이터 타입 ────────────────────────────────────────────────────────
 
 export interface NodeEventData {
-  nodeType: number;
-  mapElement: CardElement;
-  nodeId: number;
-  playerGold: number;
-  playerHp: number;
-  playerMaxHp: number;
-  playerAtk: number;
-  playerDef: number;
-  playerCrit: number;
-  playerCritDmg: number;
+  nodeType:        number;
+  mapElement:      CardElement;
+  nodeId:          number;
+  playerGold:      number;
+  playerHp:        number;
+  playerMaxHp:     number;
+  playerAtk:       number;
+  playerDef:       number;
+  playerCrit:      number;
+  playerCritDmg:   number;
   playerEquipment: string[];
-  maxEquipSlots: number;
+  maxEquipSlots:   number;
+  // 전투 이벤트용 추가 필드
+  characterWeapon: WeaponType;
+  deck:            { cardId: number; count: number }[];
 }
 
 // ─── 공통 상수 ─────────────────────────────────────────────────────────────────
@@ -51,6 +55,9 @@ export default class NodeEventScene extends Phaser.Scene {
   create() {
     this.W = this.scale.width;
     this.H = this.scale.height;
+
+    // 이벤트 중 ESC 차단
+    this.input.keyboard?.on('keydown-ESC', () => { /* 이벤트 중 비활성 */ });
 
     // 입력 차단 + 전체화면 패널 배경 (불투명 — 맵이 보이지 않도록)
     const bg = this.add.graphics();
@@ -123,15 +130,6 @@ export default class NodeEventScene extends Phaser.Scene {
     return cont;
   }
 
-  /**
-   * 속성 아이콘(attr_icons 프레임) 이미지를 반환.
-   * attrIndex: 0=물 1=불 2=풀 3=번개 4=땅 5=일반 6=별
-   */
-  private makeAttrIcon(attrIndex: number, x: number, y: number, size = 48): Phaser.GameObjects.Image {
-    const img = this.add.image(x, y, 'attr_icons', `attr_${attrIndex}`);
-    img.setDisplaySize(size, size);
-    return img;
-  }
 
   /** 본문 텍스트 */
   private makeBody(text: string, y: number): Phaser.GameObjects.Text {
@@ -186,53 +184,34 @@ export default class NodeEventScene extends Phaser.Scene {
   // ─────────────────────────────────────────────────────────────────────────────
 
   private createBattleEvent() {
-    const { nodeType, mapElement, playerHp, playerMaxHp, playerAtk, playerDef, playerCrit } = this.data_;
+    const {
+      nodeType, mapElement,
+      playerHp, playerMaxHp, playerAtk, playerDef, playerCrit, playerCritDmg,
+      characterWeapon, deck, nodeId,
+    } = this.data_;
     const isElemental = nodeType === NODE_TYPE.SWORD;
+    const mobName = isElemental
+      ? this.randomElementalMobName(mapElement)
+      : this.randomNormalMobName();
 
-    const H = this.H;
-    const ATTR_IDX: Record<string, number> = { water:0, fire:1, grass:2, lightning:3, earth:4, normal:5 };
-    const titleFrame = isElemental ? 'row0_1' : 'row0_0';
-    const titleText  = isElemental ? i18n.f('battleTitleElemental', { elem: this.elementName(mapElement) }) : i18n.t('battleTitleNormal');
-    const title = this.makeHeader(titleFrame, titleText, -H * 0.30);
+    // NodeEventScene 대신 BattleScene을 런치
+    this.scene.launch('BattleScene', {
+      nodeId,
+      isElemental,
+      mapElement,
+      mobName,
+      playerHp,
+      playerMaxHp,
+      playerAtk,
+      playerDef,
+      playerCrit,
+      playerCritDmg,
+      characterWeapon,
+      deck,
+    });
 
-    const mobName = isElemental ? this.randomElementalMobName(mapElement) : this.randomNormalMobName();
-
-    // 몬스터 이름 + 속성 아이콘을 하나의 컨테이너로 중앙 정렬
-    const mobRow = this.add.container(0, -H * 0.16);
-    const mobText = this.add.text(0, 0, mobName, {
-      fontFamily: FONT_B, fontSize: '28px', color: '#ff8888',
-    }).setOrigin(0.5);
-    if (isElemental) {
-      const iconSize = 36;
-      const gap = 10;
-      const totalW = mobText.width + gap + iconSize;
-      mobText.setX(-iconSize / 2 - gap / 2);
-      const icon = this.makeAttrIcon(ATTR_IDX[mapElement] ?? 5, mobText.x + mobText.width / 2 + gap + iconSize / 2, 0, iconSize);
-      mobRow.add([mobText, icon]);
-      void totalW; // suppress unused
-    } else {
-      mobRow.add(mobText);
-    }
-
-    const divider = this.makeDivider(-H * 0.08);
-
-    const descText = this.makeBody(
-      isElemental
-        ? i18n.f('battleDescElemental', { elem: this.elementName(mapElement) })
-        : i18n.t('battleDescNormal'),
-      H * 0.02,
-    );
-
-    const statsText = this.add.text(0, H * 0.14,
-      i18n.f('bossStats', { hp: playerHp, maxHp: playerMaxHp, atk: playerAtk, def: playerDef, crit: playerCrit }),
-      { fontFamily: FONT_L, fontSize: '15px', color: '#aaaaaa' },
-    ).setOrigin(0.5);
-
-    const battleBtn = this.makeButton(0, H * 0.28, i18n.t('bossStartFight'), 0x8b0000, () => {
-      this.closeEvent({ battleResult: 'win', mobName });
-    }, Math.round(this.W * 0.25), 60);
-
-    this.root.add([title, mobRow, divider, descText, statsText, battleBtn]);
+    // NodeEventScene 자신은 종료 (BattleScene이 nodeEventComplete 직접 발행)
+    this.scene.stop();
   }
 
   private randomNormalMobName() {
