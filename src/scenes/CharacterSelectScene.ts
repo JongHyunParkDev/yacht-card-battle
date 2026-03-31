@@ -153,14 +153,27 @@ export default class CharacterSelectScene extends Phaser.Scene {
 
   private calcLayout(width: number, height: number) {
     const count   = CHARACTERS.length;
-    const cardW   = Math.min((width - 80) / count - 10, 175);
-    const cardH   = cardW * 1.85;
+    // 남은 높이 대비 카드와 정보창 비율 계산
+    const maxCardH = Math.max(100, height - 380);
+    
+    let cardW   = Math.min((width - 80) / count - 10, 175);
+    let cardH   = cardW * 1.85;
+
+    if (cardH > maxCardH) {
+      cardH = maxCardH;
+      cardW = cardH / 1.85;
+    }
+
     const totalW  = count * (cardW + 10) - 10;
     const startX  = (width - totalW) / 2;
-    const cardY   = 108 + cardH / 2;
-    const panelY  = cardY + cardH / 2 + 14;
-    const panelH  = Math.min(height - panelY - 68, 210);
-    // 패널 너비 = 카드 5장 전체 너비에 맞춤
+    const cardY   = 96 + cardH / 2; // 상단 여백 소폭 줄임
+    const panelY  = cardY + cardH / 2 + 12;
+    
+    // 패널이 최소 130 픽셀은 되도록 보장하고, 장비창(54)과 아래여백(68)을 고려하여 H 도출
+    const btnAreaTop = height - 68;
+    let panelH  = Math.min(btnAreaTop - panelY - 70, 210);
+    if (panelH < 130) panelH = 130; // 절대적인 최소 크기 보장
+
     const panelW  = totalW;
     const panelX  = startX;
     return { count, cardW, cardH, totalW, startX, cardY, panelX, panelY, panelW, panelH };
@@ -199,17 +212,17 @@ export default class CharacterSelectScene extends Phaser.Scene {
   }
 
   private buildTitle(width: number, _height: number) {
-    this.add.text(width / 2, 42, i18n.t('selectCharacter'), {
+    this.add.text(width / 2, 36, i18n.t('selectCharacter'), {
       fontFamily: 'SBAggroB',
-      fontSize: '40px',
+      fontSize: '36px',
       color: '#d4af37',
       stroke: '#000000',
-      strokeThickness: 6,
+      strokeThickness: 5,
     }).setOrigin(0.5);
 
-    this.add.text(width / 2, 76, i18n.t('selectCharacterDesc'), {
+    this.add.text(width / 2, 68, i18n.t('selectCharacterDesc'), {
       fontFamily: 'SBAggroM',
-      fontSize: '15px',
+      fontSize: '14px',
       color: '#9a8060',
     }).setOrigin(0.5);
   }

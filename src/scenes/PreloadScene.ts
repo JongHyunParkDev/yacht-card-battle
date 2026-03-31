@@ -4,6 +4,12 @@ import { i18n } from '@src/utils/localization';
 import bg1 from '@src/assets/img/background/background_1.png';
 import bg2 from '@src/assets/img/background/background_2.png';
 
+import bgBattleFire from '@src/assets/img/background/bg_battle_fire.png';
+import bgBattleGrass from '@src/assets/img/background/bg_battle_green.png';
+import bgBattleEarth from '@src/assets/img/background/bg_battle_ground.png';
+import bgBattleLightning from '@src/assets/img/background/bg_battle_thunder.png';
+import bgBattleWater from '@src/assets/img/background/bg_battle_water.png';
+
 import charBowIdle    from '@src/assets/img/char/bow-idle.png';
 import charHammerIdle from '@src/assets/img/char/hammer-idle.png';
 import charShieldIdle from '@src/assets/img/char/shield-idle.png';
@@ -160,6 +166,11 @@ export default class PreloadScene extends Phaser.Scene {
     // 백그라운드 이미지 로드
     this.load.image('bg1', bg1);
     this.load.image('bg2', bg2);
+    this.load.image('bg_battle_fire', bgBattleFire);
+    this.load.image('bg_battle_grass', bgBattleGrass);
+    this.load.image('bg_battle_earth', bgBattleEarth);
+    this.load.image('bg_battle_lightning', bgBattleLightning);
+    this.load.image('bg_battle_water', bgBattleWater);
 
     // 맵 이미지 로드
     this.load.image('map_bg', mapBg);

@@ -50,11 +50,11 @@ function createWindow () {
     }
   });
 
-  // 영구 기록 저장 (골드/장비 — 게임 오버 후에도 유지)
+  // 영구 기록 저장
   ipcMain.handle('save-legacy', async (event, runData) => {
     try {
       const legacyPath = path.join(app.getPath('userData'), 'legacy.json');
-      let legacy = { runs: [], totalGold: 0, allEquipment: [] };
+      let legacy = { runs: [], totalGold: 0, allEquipment: [], currentGold: 0, currentEquipment: [] };
       if (fs.existsSync(legacyPath)) {
         try { legacy = JSON.parse(fs.readFileSync(legacyPath, 'utf-8')); } catch {}
       }
@@ -64,10 +64,46 @@ function createWindow () {
       equips.forEach(eq => {
         if (!legacy.allEquipment.includes(eq)) legacy.allEquipment.push(eq);
       });
+      // 런 종료 시 currentGold/currentEquipment 이원
+      legacy.currentGold      = 0;
+      legacy.currentEquipment = [];
       fs.writeFileSync(legacyPath, JSON.stringify(legacy, null, 2), 'utf-8');
       return { success: true };
     } catch (e) {
       console.error('Legacy save failed:', e);
+      return { success: false, error: e.message };
+    }
+  });
+
+  // 현재 런의 골드/장비 즉시 저장 (런 중에도 지속됨)
+  ipcMain.handle('save-persistent', async (event, data) => {
+    try {
+      const legacyPath = path.join(app.getPath('userData'), 'legacy.json');
+      let legacy = { runs: [], totalGold: 0, allEquipment: [], currentGold: 0, currentEquipment: [] };
+      if (fs.existsSync(legacyPath)) {
+        try { legacy = JSON.parse(fs.readFileSync(legacyPath, 'utf-8')); } catch {}
+      }
+      // 현재 런의 골드/장비를 덮어쓰기
+      legacy.currentGold      = data.gold      ?? legacy.currentGold ?? 0;
+      legacy.currentEquipment = data.equipment ?? legacy.currentEquipment ?? [];
+      fs.writeFileSync(legacyPath, JSON.stringify(legacy, null, 2), 'utf-8');
+      return { success: true };
+    } catch (e) {
+      console.error('Persistent save failed:', e);
+      return { success: false, error: e.message };
+    }
+  });
+
+  // 영구 데이터 로드 (currentGold / currentEquipment 포함)
+  ipcMain.handle('load-persistent', async () => {
+    try {
+      const legacyPath = path.join(app.getPath('userData'), 'legacy.json');
+      if (fs.existsSync(legacyPath)) {
+        const data = JSON.parse(fs.readFileSync(legacyPath, 'utf-8'));
+        return { success: true, data: { gold: data.currentGold ?? 0, equipment: data.currentEquipment ?? [] } };
+      }
+      return { success: true, data: { gold: 0, equipment: [] } };
+    } catch (e) {
       return { success: false, error: e.message };
     }
   });

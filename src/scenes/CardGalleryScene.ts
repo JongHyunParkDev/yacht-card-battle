@@ -33,12 +33,12 @@ const TABS: { labelKey: string; element: CardElement | 'all' }[] = [
 
 // ─── 팝업 레이아웃 상수 ───────────────────────────────────────────────────────
 
-const POPUP_W        = 400;
-const POPUP_H        = 290;
+const POPUP_W        = 660;
+const POPUP_H        = 480;
 /** 팝업 내 카드 미리보기 스케일 */
-const PREVIEW_SCALE  = 0.82;
+const PREVIEW_SCALE  = 1.7;
 /** 팝업 내 카드 왼쪽 여백 */
-const PREVIEW_PAD    = 16;
+const PREVIEW_PAD    = 24;
 /** 미리보기 카드 너비 (scaled) */
 const PREVIEW_CARD_W = Math.round(CARD_WIDTH * PREVIEW_SCALE);
 /** 우측 정보 컬럼 시작 x */
@@ -285,100 +285,36 @@ export default class CardGalleryScene extends Phaser.Scene {
 
   private showDetailPopup(cardData: CardData, w: number, h: number) {
     this.detailPopup?.destroy();
-    this.detailPopup = null;
-
-    const popX = Math.round((w - POPUP_W) / 2);
-    const popY = Math.round((h - POPUP_H) / 2);
+    
+    const popX = Math.round(w / 2);
+    const popY = Math.round(h / 2);
 
     const popup = this.add.container(popX, popY).setDepth(100);
     this.detailPopup = popup;
 
-    // ── 딤 배경 ──
     const dim = this.add.graphics();
-    dim.fillStyle(0x000000, 0.65);
+    dim.fillStyle(0x000000, 0.85);
     dim.fillRect(-popX, -popY, w, h);
     dim.setInteractive(new Phaser.Geom.Rectangle(-popX, -popY, w, h), Phaser.Geom.Rectangle.Contains);
     dim.on('pointerdown', () => { this.detailPopup?.destroy(); this.detailPopup = null; });
     popup.add(dim);
 
-    // ── 팝업 배경 ──
-    const bg = this.add.graphics();
-    bg.fillStyle(0x1a1612, 1);
-    bg.fillRoundedRect(0, 0, POPUP_W, POPUP_H, 12);
-    bg.lineStyle(2, GOLD, 1);
-    bg.strokeRoundedRect(0, 0, POPUP_W, POPUP_H, 12);
-    popup.add(bg);
-
-    // ── 카드 미리보기 (top-left = PREVIEW_PAD, 20) ──
-    const previewCard = new Card(this, PREVIEW_PAD, 20, cardData);
+    const PREVIEW_SCALE = 2.2;
+    // Container는 기준이 좌상단이므로, 카드의 중심이 popX, popY에 오도록 x,y 이동
+    const previewCard = new Card(this, (-CARD_WIDTH / 2) * PREVIEW_SCALE, (-CARD_HEIGHT / 2) * PREVIEW_SCALE, cardData);
     previewCard.setScale(PREVIEW_SCALE);
     popup.add(previewCard);
 
-    // ── 우측 정보 컬럼 ──
-    const ix = INFO_COL_X;
-    let iy = 22;
-
-    // 이름
-    popup.add(this.add.text(ix, iy, i18n.t(cardData.nameKey), {
-      fontFamily: 'SBAggroB', fontSize: '15px', color: GOLD_HEX,
-      wordWrap: { width: INFO_COL_W },
-    }));
-    iy += 24;
-
-    // 속성
-    popup.add(this.add.text(ix, iy, this.elementLabel(cardData.element), {
-      fontFamily: 'SBAggroM', fontSize: '12px', color: '#cccccc',
-    }));
-    iy += 18;
-
-    // 별
-    if (cardData.stars > 0) {
-      popup.add(this.add.text(ix, iy, '★'.repeat(cardData.stars), {
-        fontFamily: 'SBAggroB', fontSize: '13px', color: '#ffe033',
-      }));
-    } else {
-      popup.add(this.add.text(ix, iy, i18n.t('noGrade'), {
-        fontFamily: 'SBAggroL', fontSize: '11px', color: DIM_HEX,
-      }));
-    }
-    iy += 22;
-
-    // 능력치 박스
-    const statBg = this.add.graphics();
-    statBg.fillStyle(0x2a2520, 1);
-    statBg.fillRoundedRect(ix - 4, iy, INFO_COL_W + 4, 82, 6);
-    popup.add(statBg);
-    iy += 8;
-
-    popup.add(this.add.text(ix + 4, iy, [
-      `${i18n.t('cardAttack')}:  ${cardData.attack}`,
-      `${i18n.t('cardDefense')}:  ${cardData.defense}`,
-      `${i18n.t('cardCost')}:  ${cardData.cost}`,
-    ], {
-      fontFamily: 'SBAggroM', fontSize: '12px', color: '#e6d8b8', lineSpacing: 10,
-    }));
-    iy += 82;
-
-    // 설명 박스
-    const descBg = this.add.graphics();
-    const descH  = POPUP_H - iy - 12;
-    descBg.fillStyle(0x2a2520, 0.7);
-    descBg.fillRoundedRect(ix - 4, iy, INFO_COL_W + 4, descH, 6);
-    popup.add(descBg);
-
-    popup.add(this.add.text(ix + 4, iy + 6, i18n.t(cardData.descKey), {
-      fontFamily: 'SBAggroL', fontSize: '11px', color: '#cccccc',
-      wordWrap: { width: INFO_COL_W - 8 }, lineSpacing: 5,
-    }));
-
-    // 닫기 버튼
-    const close = this.add.text(POPUP_W - 14, 10, '✕', {
-      fontFamily: 'SBAggroB', fontSize: '18px', color: DIM_HEX,
-    }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
-    close.on('pointerdown', () => { this.detailPopup?.destroy(); this.detailPopup = null; });
-    close.on('pointerover', () => close.setColor(WHITE_HEX));
-    close.on('pointerout',  () => close.setColor(DIM_HEX));
+    // 닫기 안내 텍스트
+    const close = this.add.text(0, (CARD_HEIGHT / 2) * PREVIEW_SCALE + 30, '닫기 (여백 클릭)', {
+      fontFamily: 'SBAggroM', fontSize: '18px', color: '#aaaaaa',
+    }).setOrigin(0.5);
     popup.add(close);
+    
+    // 약간의 등장 애니메이션
+    popup.setScale(0.8);
+    popup.setAlpha(0);
+    this.tweens.add({ targets: popup, scale: 1, alpha: 1, duration: 250, ease: 'Back.easeOut' });
   }
 
   private elementLabel(el: CardElement | 'all'): string {

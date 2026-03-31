@@ -12,7 +12,6 @@ interface DeckEntry { card: CardData; count: number; }
 interface SaveState {
   mapHash: string;
   currentNodeId?: number;
-  playerGold?: number;
   playerHp?: number;
   playerMaxHp?: number;
   playerAtk?: number;
@@ -25,6 +24,7 @@ interface SaveState {
   deck?: { cardId: number; count: number }[];
   equipment?: string[];
   maxEquipSlots?: number;
+  cardMultipliers?: Record<number, number>;
 }
 
 // ─── 상수 ─────────────────────────────────────────────────────────────────────
@@ -75,21 +75,23 @@ export default class MainScene extends Phaser.Scene {
   private isMoving      = false;
   private currentNodeId = -1;
   private isReady     = false;
+  private currentMapElement: string = 'water';
   private character?: CharacterDef;
   private playerDeck: DeckEntry[] = [];
   // ── 플레이어 스탯 ─────────────────────────────────────────────────────────
-  private playerGold       = 50;
+  private legacyGold       = 0;
   private playerHp         = 100;
   private playerMaxHp      = 100;
   private playerAtk        = 0;
   private playerDef        = 0;
   private playerCrit       = 0;
   private playerCritDmg    = 1.5;
-  private playerCardMult   = 1.0; // 카드 전체 공격/방어 배율 (하트 이벤트)
-  private playerShieldMult = 1.0; // 방어 카드 쉴드 배율 (방어 이벤트)
+  private playerCardMult   = 1.0; // 카드 전체 공격/방어 배율 (전체)
+  private playerShieldMult = 1.0; // 방어 카드 전체 배율
   private playerEquipment: string[] = [];
   private maxEquipSlots    = 1;
   private mapHash          = '';
+  private cardMultipliers: Record<number, number> = {}; // 런타임 개별 카드 배율
 
   // ── 게임 오브젝트 참조 ────────────────────────────────────────────────────────
   private playerToken!: Phaser.GameObjects.Arc;
@@ -130,7 +132,19 @@ export default class MainScene extends Phaser.Scene {
     }
     // 캐릭터 기본값 → 세이브 값으로 덮어쓰기
     const base = this.character;
-    this.playerGold    = state.playerGold    ?? 50;
+    
+    // 골드는 SaveState가 아니라 영구 기록(legacy)에서 직접 불러옵니다.
+    // @ts-ignore
+    if (typeof require !== 'undefined') {
+      try {
+        const { ipcRenderer } = require('electron');
+        const res = await ipcRenderer.invoke('load-persistent');
+        if (res?.success) {
+          this.legacyGold = res.data.gold ?? 0;
+        }
+      } catch (e) { console.warn('골드 로드 실패', e); }
+    }
+
     this.playerHp      = state.playerHp      ?? (base?.hp      ?? 100);
     this.playerMaxHp   = state.playerMaxHp   ?? (base?.hp      ?? 100);
     this.playerAtk     = state.playerAtk     ?? (base?.atk     ?? 0);
@@ -141,6 +155,28 @@ export default class MainScene extends Phaser.Scene {
     this.maxEquipSlots    = state.maxEquipSlots  ?? 1;
     this.playerCardMult   = state.playerCardMult   ?? 1.0;
     this.playerShieldMult = state.playerShieldMult ?? 1.0;
+    this.cardMultipliers  = state.cardMultipliers || {};
+    this.currentMapElement = (state as any).mapElement ?? 'water';
+
+    // 만약 새 게임(isContinue === false)이고 초기 장비가 존재한다면, 해당 장비의 스탯을 기본 스탯에 적용
+    if (!this.isContinue && this.playerEquipment.length > 0) {
+      this.playerEquipment.forEach(eqId => {
+        const eq = getEquipmentById(eqId);
+        if (eq) {
+          const s = eq.stats;
+          if (s.atk)       this.playerAtk     += s.atk;
+          if (s.def)       this.playerDef     += s.def;
+          if (s.crit)      this.playerCrit    += s.crit;
+          if (s.critDmg)   this.playerCritDmg += s.critDmg;
+          if (s.maxHp) {
+            this.playerMaxHp += s.maxHp;
+            this.playerHp    += s.maxHp;
+          }
+          if (s.cardMult)   this.playerCardMult   *= s.cardMult;
+          if (s.shieldMult) this.playerShieldMult *= s.shieldMult;
+        }
+      });
+    }
 
     const mapLayersData = this.generateMapData(this.mapHash, mapWorldWidth, MAP_WORLD_HEIGHT);
     const allNodes      = mapLayersData.flat();
@@ -290,7 +326,6 @@ export default class MainScene extends Phaser.Scene {
     const base = this.character;
     const state: SaveState = {
       mapHash,
-      playerGold:    50,
       playerHp:      base?.hp      ?? 100,
       playerMaxHp:   base?.hp      ?? 100,
       playerAtk:     base?.atk     ?? 0,
@@ -299,6 +334,8 @@ export default class MainScene extends Phaser.Scene {
       playerCritDmg: base?.critDmg ?? 1.5,
       characterId:   base?.id,
     };
+    const elements = ['fire', 'water', 'grass', 'earth', 'lightning'];
+    (state as any).mapElement = elements[Math.floor(Math.random() * elements.length)];
     await this.saveToElectron(state);
     return state;
   }
@@ -308,7 +345,6 @@ export default class MainScene extends Phaser.Scene {
     const state: SaveState = {
       mapHash:       this.mapHash,
       currentNodeId: this.currentNodeId,
-      playerGold:    this.playerGold,
       playerHp:      this.playerHp,
       playerMaxHp:   this.playerMaxHp,
       playerAtk:     this.playerAtk,
@@ -321,7 +357,9 @@ export default class MainScene extends Phaser.Scene {
       maxEquipSlots:    this.maxEquipSlots,
       playerCardMult:   this.playerCardMult,
       playerShieldMult: this.playerShieldMult,
+      cardMultipliers:  this.cardMultipliers,
     };
+    (state as any).mapElement = this.currentMapElement; // mapElement 저장
     await this.saveToElectron(state);
   }
 
@@ -357,7 +395,7 @@ export default class MainScene extends Phaser.Scene {
       const { ipcRenderer } = require('electron');
       await ipcRenderer.invoke('save-legacy', {
         date:      new Date().toISOString(),
-        gold:      this.playerGold,
+        gold:      this.legacyGold,
         equipment: [...this.playerEquipment],
         reached:   reachedLayer,
         character: this.character?.id ?? 'unknown',
@@ -729,6 +767,9 @@ export default class MainScene extends Phaser.Scene {
           this.deckWindowContainer.bringToTop(card);
           this.tweens.add({ targets: card, scaleX: cardScale * 1.18, scaleY: cardScale * 1.18, duration: 110, ease: 'Sine.easeOut' });
         });
+        card.on('pointerdown', () => {
+          this.showCardDetailPopup(entry.card);
+        });
         card.on('pointerout', () => {
           this.tweens.add({ targets: card, scaleX: cardScale, scaleY: cardScale, duration: 110, ease: 'Sine.easeOut' });
         });
@@ -775,6 +816,40 @@ export default class MainScene extends Phaser.Scene {
     g.clear();
     g.fillStyle(color, 1);
     g.fillRoundedRect(x, y, DECK_PANEL_HANDLE_W, DECK_PANEL_HANDLE_H, HANDLE_RADIUS);
+  }
+
+  private showCardDetailPopup(cardData: CardData) {
+    const { width, height } = this.scale;
+    const popX = Math.round(width / 2);
+    const popY = Math.round(height / 2);
+
+    const popup = this.add.container(popX, popY).setDepth(200);
+    this.cameras.main.ignore(popup); // MainScene uiCam에서 이미 그려짐
+
+    // ── 딤 배경 ──
+    const dim = this.add.graphics();
+    dim.fillStyle(0x000000, 0.85);
+    dim.fillRect(-popX, -popY, width, height);
+    dim.setInteractive(new Phaser.Geom.Rectangle(-popX, -popY, width, height), Phaser.Geom.Rectangle.Contains);
+    dim.on('pointerdown', () => popup.destroy());
+    popup.add(dim);
+
+    const PREVIEW_SCALE = 2.2;
+    // ── 카드 미리보기 ──
+    const previewCard = new Card(this, (-CARD_WIDTH / 2) * PREVIEW_SCALE, (-CARD_HEIGHT / 2) * PREVIEW_SCALE, cardData);
+    previewCard.setScale(PREVIEW_SCALE);
+    popup.add(previewCard);
+
+    // 닫기 안내 텍스트
+    const close = this.add.text(0, (CARD_HEIGHT / 2) * PREVIEW_SCALE + 30, '닫기 (여백 클릭)', {
+      fontFamily: 'SBAggroM', fontSize: '18px', color: '#aaaaaa',
+    }).setOrigin(0.5);
+    popup.add(close);
+
+    // 등장 효과
+    popup.setScale(0.8);
+    popup.setAlpha(0);
+    this.tweens.add({ targets: popup, scale: 1, alpha: 1, duration: 250, ease: 'Back.easeOut' });
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1074,7 +1149,8 @@ export default class MainScene extends Phaser.Scene {
         if (layer === 0) {
           nodeType = 0;
         } else if (isBossLayer) {
-          nodeType = BOSS_NODE_TYPES[randInt(0, BOSS_NODE_TYPES.length - 1)];
+          const bossTypes: Record<string, number> = { water: 11, fire: 12, grass: 13, lightning: 15, earth: 16 };
+          nodeType = bossTypes[this.currentMapElement] ?? 11;
         } else {
           nodeType = layerTypes![i];
         }
@@ -1152,23 +1228,30 @@ export default class MainScene extends Phaser.Scene {
     this.scene.pause();
     this.scene.launch('NodeEventScene', {
       nodeType:        node.type,
-      mapElement:      'water',
+      mapElement:      this.currentMapElement,
       nodeId:          node.id,
-      playerGold:      this.playerGold,
+      currentGold:     this.legacyGold,
       playerHp:        this.playerHp,
       playerMaxHp:     this.playerMaxHp,
       playerAtk:       this.playerAtk,
       playerDef:       this.playerDef,
       playerCrit:      this.playerCrit,
       playerCritDmg:   this.playerCritDmg,
+      playerCardMult:  this.playerCardMult,
+      playerShieldMult:this.playerShieldMult,
       playerEquipment: [...this.playerEquipment],
       maxEquipSlots:   this.maxEquipSlots,
       characterWeapon: this.character?.weapon ?? 'swordShield',
-      deck:            this.playerDeck.map(e => ({ cardId: e.card.id, count: e.count })),
+      deck:            this.playerDeck.map(e => ({ cardId: e.card.id, count: e.count, mult: this.cardMultipliers[e.card.id] || 1.0 })),
     });
 
     this.game.events.once('nodeEventComplete', (result: Record<string, unknown>) => {
-      if (typeof result.goldDelta    === 'number') this.playerGold    = Math.max(0, this.playerGold + result.goldDelta);
+      let persistentChanged = false; // 골드/장비 변경 여부 추적
+
+      if (typeof result.goldDelta    === 'number') {
+        this.legacyGold    = Math.max(0, this.legacyGold + result.goldDelta);
+        if (result.goldDelta !== 0) persistentChanged = true;
+      }
       if (typeof result.hpDelta      === 'number') this.playerHp      = Math.max(0, Math.min(this.playerMaxHp, this.playerHp + result.hpDelta));
       if (typeof result.maxHpDelta   === 'number') this.playerMaxHp   = Math.max(1, this.playerMaxHp + result.maxHpDelta);
       if (typeof result.atkDelta     === 'number') this.playerAtk     = Math.max(0, this.playerAtk + result.atkDelta);
@@ -1184,6 +1267,7 @@ export default class MainScene extends Phaser.Scene {
         } else if (this.playerEquipment.length < this.maxEquipSlots) {
           this.playerEquipment.push(newEquip);
         }
+        persistentChanged = true;
       }
 
       // 덱 카드 변경 이벤트 처리
@@ -1193,6 +1277,9 @@ export default class MainScene extends Phaser.Scene {
       if (typeof result.starUpElement === 'string') {
         this.starUpDeckCard(result.starUpElement);
       }
+      if (typeof result.upgradeStarCardId === 'number') {
+        this.starUpDeckCardById(result.upgradeStarCardId);
+      }
       if (typeof result.pokerCard === 'number' && result.pokerCard > 0) {
         this.addPokerCard(result.pokerCard);
       }
@@ -1201,6 +1288,10 @@ export default class MainScene extends Phaser.Scene {
       }
       if (typeof result.shieldMultiplier === 'number') {
         this.playerShieldMult = parseFloat((this.playerShieldMult * result.shieldMultiplier).toFixed(4));
+      }
+      if (typeof result.upgradeCardId === 'number' && typeof result.upgradeCardMult === 'number') {
+        const cid = result.upgradeCardId as number;
+        this.cardMultipliers[cid] = (this.cardMultipliers[cid] || 1.0) * (result.upgradeCardMult as number);
       }
 
       // 게임 오버 체크
@@ -1212,6 +1303,9 @@ export default class MainScene extends Phaser.Scene {
       }
 
       this.saveGameState();
+      // 골드/장비 변경 시 legacy.json에도 즉시 반영 (런 종료 후에도 보존)
+      if (persistentChanged) this.savePersistentData();
+      this.refreshDeckPanel(); // 스탯(HP 포함) 및 덱 UI 항상 최신화
       this.isPaused = false;
     });
   }
@@ -1256,6 +1350,25 @@ export default class MainScene extends Phaser.Scene {
     this.refreshDeckPanel();
   }
 
+  /** 지정된 카드의 별 +1 업그레이드 */
+  private starUpDeckCardById(cardId: number) {
+    const upgradable = this.playerDeck.find(e => e.card.id === cardId);
+    if (!upgradable || upgradable.card.stars >= 5) return;
+    
+    const off = this.ELEM_OFFSET[upgradable.card.element];
+    if (off == null) return;
+
+    const newCard = CARD_DATA_LIST[off + upgradable.card.stars]; // stars -> stars+1
+    upgradable.count--;
+    if (upgradable.count <= 0) {
+      this.playerDeck = this.playerDeck.filter(e => e !== upgradable);
+    }
+    const existing = this.playerDeck.find(e => e.card.id === newCard.id);
+    if (existing) existing.count++;
+    else this.playerDeck.push({ card: newCard, count: 1 });
+    this.refreshDeckPanel();
+  }
+
   /** 인디언 포커 카드 획득: 랜덤 속성 + 지정 별 등급 1장 덱에 추가 */
   private addPokerCard(stars: number) {
     const ELEMS = Object.keys(this.ELEM_OFFSET);
@@ -1265,6 +1378,21 @@ export default class MainScene extends Phaser.Scene {
     if (existing) existing.count++;
     else this.playerDeck.push({ card: newCard, count: 1 });
     this.refreshDeckPanel();
+  }
+
+  /** 골드/장비를 legacy.json에 즉시 저장 (런 종료 후에도 보존) */
+  private async savePersistentData() {
+    // @ts-ignore
+    if (typeof require === 'undefined') return;
+    try {
+      const { ipcRenderer } = require('electron');
+      await ipcRenderer.invoke('save-persistent', {
+        gold:      this.legacyGold,
+        equipment: [...this.playerEquipment],
+      });
+    } catch (e) {
+      console.warn('Persistent 저장 실패', e);
+    }
   }
 
   /** 덱 패널 재생성 (덱 내용 변경 후 호출) */

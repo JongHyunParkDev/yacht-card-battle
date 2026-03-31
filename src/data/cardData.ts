@@ -25,16 +25,16 @@ export interface CardData {
   spriteCol: number;
   /** attr-sprite.png 에서 속성 아이콘 인덱스 (0-based) */
   attrIndex: number;
-  /** 공격력 (기본값) */
-  attack: number;
-  /** 방어력 (기본값) */
-  defense: number;
-  /** 마나 비용 */
-  cost: number;
+  /** 효과 키 */
+  key: string;
+  /** 효과 수치 (기본값) */
+  value: number;
+  /** 인게임 적용 배율 (런타임 추가) */
+  mult: number;
 }
 
 // ─── 속성별 attr-sprite 인덱스 ────────────────────────────────────────────────
-
+// 속성 상성 : 물 > 불 > 풀 > 번개 > 돌 > 물
 export const ELEMENT_ATTR_INDEX: Record<CardElement, number> = {
   water:     0,
   fire:      1,
@@ -57,7 +57,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'water', stars: 1,
     spriteRow: 0, spriteCol: 0,
     attrIndex: ELEMENT_ATTR_INDEX.water,
-    attack: 0, defense: 4, cost: 1,
+    key: 'attack',
+    value: 10, mult: 1,
   },
   {
     id: 1,
@@ -65,7 +66,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'water', stars: 2,
     spriteRow: 0, spriteCol: 1,
     attrIndex: ELEMENT_ATTR_INDEX.water,
-    attack: 8, defense: 5, cost: 2,
+    key: 'attack',
+    value: 15, mult: 1,
   },
   {
     id: 2,
@@ -73,7 +75,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'water', stars: 3,
     spriteRow: 0, spriteCol: 2,
     attrIndex: ELEMENT_ATTR_INDEX.water,
-    attack: 12, defense: 8, cost: 3,
+    key: 'attack',
+    value: 20, mult: 1,
   },
   {
     id: 3,
@@ -81,7 +84,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'water', stars: 4,
     spriteRow: 0, spriteCol: 3,
     attrIndex: ELEMENT_ATTR_INDEX.water,
-    attack: 18, defense: 12, cost: 4,
+    key: 'attack',
+    value: 25, mult: 1,
   },
   {
     id: 4,
@@ -89,7 +93,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'water', stars: 5,
     spriteRow: 0, spriteCol: 4,
     attrIndex: ELEMENT_ATTR_INDEX.water,
-    attack: 25, defense: 15, cost: 5,
+    key: 'attack',
+    value: 30, mult: 1,
   },
 
   // ── Row 1: 불 (fire) ─────────────────────────────────────────────────────────
@@ -99,7 +104,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'fire', stars: 1,
     spriteRow: 1, spriteCol: 0,
     attrIndex: ELEMENT_ATTR_INDEX.fire,
-    attack: 5, defense: 0, cost: 1,
+    key: 'attack',
+    value: 10, mult: 1,
   },
   {
     id: 6,
@@ -107,7 +113,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'fire', stars: 2,
     spriteRow: 1, spriteCol: 1,
     attrIndex: ELEMENT_ATTR_INDEX.fire,
-    attack: 9, defense: 3, cost: 2,
+    key: 'attack',
+    value: 15, mult: 1,
   },
   {
     id: 7,
@@ -115,7 +122,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'fire', stars: 3,
     spriteRow: 1, spriteCol: 2,
     attrIndex: ELEMENT_ATTR_INDEX.fire,
-    attack: 14, defense: 6, cost: 3,
+    key: 'attack',
+    value: 20, mult: 1,
   },
   {
     id: 8,
@@ -123,7 +131,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'fire', stars: 4,
     spriteRow: 1, spriteCol: 3,
     attrIndex: ELEMENT_ATTR_INDEX.fire,
-    attack: 20, defense: 10, cost: 4,
+    key: 'attack',
+    value: 25, mult: 1,
   },
   {
     id: 9,
@@ -131,7 +140,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'fire', stars: 5,
     spriteRow: 1, spriteCol: 4,
     attrIndex: ELEMENT_ATTR_INDEX.fire,
-    attack: 28, defense: 12, cost: 5,
+    key: 'attack',
+    value: 30, mult: 1,
   },
 
   // ── Row 2: 풀 (grass) ────────────────────────────────────────────────────────
@@ -141,7 +151,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'grass', stars: 1,
     spriteRow: 2, spriteCol: 0,
     attrIndex: ELEMENT_ATTR_INDEX.grass,
-    attack: 2, defense: 6, cost: 1,
+    key: 'attack',
+    value: 10, mult: 1,
   },
   {
     id: 11,
@@ -149,7 +160,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'grass', stars: 2,
     spriteRow: 2, spriteCol: 1,
     attrIndex: ELEMENT_ATTR_INDEX.grass,
-    attack: 10, defense: 4, cost: 2,
+    key: 'attack',
+    value: 15, mult: 1,
   },
   {
     id: 12,
@@ -157,7 +169,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'grass', stars: 3,
     spriteRow: 2, spriteCol: 2,
     attrIndex: ELEMENT_ATTR_INDEX.grass,
-    attack: 11, defense: 14, cost: 3,
+    key: 'attack',
+    value: 20, mult: 1,
   },
   {
     id: 13,
@@ -165,7 +178,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'grass', stars: 4,
     spriteRow: 2, spriteCol: 3,
     attrIndex: ELEMENT_ATTR_INDEX.grass,
-    attack: 16, defense: 18, cost: 4,
+    key: 'attack',
+    value: 25, mult: 1,
   },
   {
     id: 14,
@@ -173,7 +187,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'grass', stars: 5,
     spriteRow: 2, spriteCol: 4,
     attrIndex: ELEMENT_ATTR_INDEX.grass,
-    attack: 14, defense: 22, cost: 5,
+    key: 'attack',
+    value: 30, mult: 1,
   },
 
   // ── Row 3: 번개 (lightning) ──────────────────────────────────────────────────
@@ -183,7 +198,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'lightning', stars: 1,
     spriteRow: 3, spriteCol: 0,
     attrIndex: ELEMENT_ATTR_INDEX.lightning,
-    attack: 6, defense: 2, cost: 1,
+    key: 'attack',
+    value: 10, mult: 1,
   },
   {
     id: 16,
@@ -191,7 +207,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'lightning', stars: 2,
     spriteRow: 3, spriteCol: 1,
     attrIndex: ELEMENT_ATTR_INDEX.lightning,
-    attack: 11, defense: 5, cost: 2,
+    key: 'attack',
+    value: 15, mult: 1,
   },
   {
     id: 17,
@@ -199,7 +216,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'lightning', stars: 3,
     spriteRow: 3, spriteCol: 2,
     attrIndex: ELEMENT_ATTR_INDEX.lightning,
-    attack: 16, defense: 7, cost: 3,
+    key: 'attack',
+    value: 20, mult: 1,
   },
   {
     id: 18,
@@ -207,7 +225,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'lightning', stars: 4,
     spriteRow: 3, spriteCol: 3,
     attrIndex: ELEMENT_ATTR_INDEX.lightning,
-    attack: 22, defense: 10, cost: 4,
+    key: 'attack',
+    value: 25, mult: 1,
   },
   {
     id: 19,
@@ -215,7 +234,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'lightning', stars: 5,
     spriteRow: 3, spriteCol: 4,
     attrIndex: ELEMENT_ATTR_INDEX.lightning,
-    attack: 30, defense: 12, cost: 5,
+    key: 'attack',
+    value: 30, mult: 1,
   },
 
   // ── Row 4: 돌 (earth) ────────────────────────────────────────────────────────
@@ -225,7 +245,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'earth', stars: 1,
     spriteRow: 4, spriteCol: 0,
     attrIndex: ELEMENT_ATTR_INDEX.earth,
-    attack: 3, defense: 8, cost: 1,
+    key: 'attack',
+    value: 10, mult: 1,
   },
   {
     id: 21,
@@ -233,7 +254,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'earth', stars: 2,
     spriteRow: 4, spriteCol: 1,
     attrIndex: ELEMENT_ATTR_INDEX.earth,
-    attack: 12, defense: 6, cost: 2,
+    key: 'attack',
+    value: 15, mult: 1,
   },
   {
     id: 22,
@@ -241,7 +263,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'earth', stars: 3,
     spriteRow: 4, spriteCol: 2,
     attrIndex: ELEMENT_ATTR_INDEX.earth,
-    attack: 10, defense: 18, cost: 3,
+    key: 'attack',
+    value: 20, mult: 1,
   },
   {
     id: 23,
@@ -249,7 +272,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'earth', stars: 4,
     spriteRow: 4, spriteCol: 3,
     attrIndex: ELEMENT_ATTR_INDEX.earth,
-    attack: 24, defense: 14, cost: 4,
+    key: 'attack',
+    value: 25, mult: 1,
   },
   {
     id: 24,
@@ -257,7 +281,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'earth', stars: 5,
     spriteRow: 4, spriteCol: 4,
     attrIndex: ELEMENT_ATTR_INDEX.earth,
-    attack: 26, defense: 20, cost: 5,
+    key: 'attack',
+    value: 30, mult: 1,
   },
 
   // ── Row 5: 일반 (normal) ─────────────────────────────────────────────────────
@@ -267,7 +292,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'normal', stars: 0,
     spriteRow: 5, spriteCol: 0,
     attrIndex: ELEMENT_ATTR_INDEX.normal,
-    attack: 10, defense: 0, cost: 2,
+    key: 'attack',
+    value: 10, mult: 1,
   },
   {
     id: 26,
@@ -275,7 +301,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'normal', stars: 0,
     spriteRow: 5, spriteCol: 1,
     attrIndex: ELEMENT_ATTR_INDEX.normal,
-    attack: 0, defense: 14, cost: 2,
+    key: 'defense',
+    value: 15, mult: 1,
   },
   {
     id: 27,
@@ -283,7 +310,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'normal', stars: 0,
     spriteRow: 5, spriteCol: 2,
     attrIndex: ELEMENT_ATTR_INDEX.normal,
-    attack: 14, defense: 0, cost: 3,
+    key: 'spear',
+    value: 10, mult: 1,
   },
   {
     id: 28,
@@ -291,7 +319,8 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'normal', stars: 0,
     spriteRow: 5, spriteCol: 3,
     attrIndex: ELEMENT_ATTR_INDEX.normal,
-    attack: 7, defense: 0, cost: 2,
+    key: 'arrow',
+    value: 5, mult: 1,
   },
   {
     id: 29,
@@ -299,6 +328,7 @@ export const CARD_DATA_LIST: CardData[] = [
     element: 'normal', stars: 0,
     spriteRow: 5, spriteCol: 4,
     attrIndex: ELEMENT_ATTR_INDEX.normal,
-    attack: 0, defense: 0, cost: 2,
+    key: 'hp',
+    value: 10, mult: 1,
   },
 ];

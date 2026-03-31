@@ -1,13 +1,16 @@
 import Phaser from 'phaser';
 import { CARD_DATA_LIST, CardData, CardElement, ELEMENT_ATTR_INDEX } from '@src/data/cardData';
+import { getRandomEnemy } from '@src/data/enemyData';
 import { i18n } from '@src/utils/localization';
 import { WeaponType, CHAR_SPRITE_KEY, CHAR_FRAME_COUNT } from '@src/scenes/CharacterSelectScene';
+import Card, { CARD_WIDTH, CARD_HEIGHT } from '@src/objects/Card';
 
 // ─── 인터페이스 ───────────────────────────────────────────────────────────────
 
 export interface BattleSceneData {
   nodeId:          number;
   isElemental:     boolean;
+  isBoss?:         boolean;  // 보스 전투 여부
   mapElement:      CardElement;
   mobName:         string;
   playerHp:        number;
@@ -17,7 +20,9 @@ export interface BattleSceneData {
   playerCrit:      number;
   playerCritDmg:   number;
   characterWeapon: WeaponType;
-  deck:            { cardId: number; count: number }[];
+  deck:            { cardId: number; count: number; mult?: number }[];
+  playerCardMult:  number;
+  playerShieldMult: number;
 }
 
 // ─── 상수 ─────────────────────────────────────────────────────────────────────
@@ -55,6 +60,7 @@ export default class BattleScene extends Phaser.Scene {
   private data_!: BattleSceneData;
   private W = 0;
   private H = 0;
+  private uiScale = 1;
 
   // ── 배틀 상태 ─────────────────────────────────────────────────────────────
   private playerCurrentHp = 0;
@@ -67,9 +73,18 @@ export default class BattleScene extends Phaser.Scene {
   private battleEnded     = false;
 
   // ── 카드 상태 ─────────────────────────────────────────────────────────────
-  private expandedDeck: CardData[] = [];
+  private drawPile: CardData[] = []; // 뽑을 카드 뭉치
+  private discardPile: CardData[] = []; // 버린 카드 뭉치
   private hand:         CardData[] = [];
-  private rerollsUsed:  boolean[]  = Array(HAND_SIZE).fill(false);
+  private rerollsUsed:  boolean[]  = [];
+  private selectedCards: boolean[] = [];
+  private selectionOrder: number[] = [];
+  private cardContainers: Phaser.GameObjects.Container[] = [];
+  private rerollBtns: Phaser.GameObjects.Container[] = [];
+  private attackBtn!: Phaser.GameObjects.Container;
+  private comboInfoText!:   Phaser.GameObjects.Text;
+  private shieldBadge!:     Phaser.GameObjects.Container; // 쉴드 표시 뱃지
+  private currentTurnDefense = 0;
 
   // ── UI ────────────────────────────────────────────────────────────────────
   private playerSprite!:    Phaser.GameObjects.Sprite;
@@ -87,33 +102,52 @@ export default class BattleScene extends Phaser.Scene {
   private playerStatsPop!:  Phaser.GameObjects.Container;
   private enemyStatsPop!:   Phaser.GameObjects.Container;
 
-  private cardContainers:   Phaser.GameObjects.Container[] = [];
-  private rerollBtns:       Phaser.GameObjects.Container[] = [];
-  private attackBtn!:       Phaser.GameObjects.Container;
-
   // ── idle 애니 트위너 (적 "숨쉬기") ────────────────────────────────────────
   private enemyIdleTween?: Phaser.Tweens.Tween;
 
   constructor() { super('BattleScene'); }
 
-  init(data: BattleSceneData) { this.data_ = data; }
+  init(data: BattleSceneData) { 
+    this.data_ = data; 
+    this.currentTurn = 1;
+    this.isAnimating = false;
+    this.battleEnded = false;
+    this.drawPile = [];
+    this.discardPile = [];
+    this.hand = [];
+    this.rerollsUsed = Array(HAND_SIZE).fill(false);
+    this.selectedCards = Array(HAND_SIZE).fill(false);
+    this.cardContainers = [];
+    this.rerollBtns = [];
+    this.currentTurnDefense = 0;
+  }
 
   // ───────────────────────────────────────────────────────────────────────────
   create() {
     this.W = this.scale.width;
     this.H = this.scale.height;
+    this.uiScale = Math.min(1.2, this.W / 600, this.H / 800);
 
     const { playerHp, playerAtk, playerDef, isElemental } = this.data_;
 
     // 적 스탯 계산
     this.playerCurrentHp = playerHp;
-    this.enemyMaxHp      = isElemental ? 120 : 85;
-    this.enemyAtk        = Math.max(4, Math.floor(playerAtk * (isElemental ? 0.85 : 0.65)));
-    this.enemyDef        = Math.max(0, Math.floor(playerDef * (isElemental ? 1.0 : 0.7)));
-    this.enemyCurrentHp  = this.enemyMaxHp;
+    const rank = this.data_.isBoss ? 'boss' : (isElemental ? 'elite' : 'normal');
+    const elem = isElemental ? this.data_.mapElement : 'normal';
+    const enemyDefData = getRandomEnemy(elem, rank);
 
-    // 덱 확장
-    this.expandDeck();
+    this.enemyMaxHp      = enemyDefData.hp;
+    this.enemyAtk        = enemyDefData.atk;
+    this.enemyDef        = enemyDefData.def;
+    this.enemyCurrentHp  = enemyDefData.hp;
+    
+    // UI에 보여질 이름: 보스는 전달받은 mobName 사용, 일반은 enemyData에서
+    if (!this.data_.isBoss) {
+      this.data_.mobName = i18n.t(enemyDefData.nameKey) || enemyDefData.nameKey;
+    }
+
+    // 덱 초기화 (첫 드로우 전 drawPile 채움)
+    this.initBattleDeck();
 
     // UI 생성
     this.createBackground();
@@ -127,25 +161,40 @@ export default class BattleScene extends Phaser.Scene {
     // 첫 손패 드로우
     this.drawHand();
     this.refreshCardDisplay();
+    this.updateAttackButtonState();
 
     // ESC 차단
     this.input.keyboard?.on('keydown-ESC', () => { /* 전투 중 비활성 */ });
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // 덱 확장 (count 반영)
-  // ───────────────────────────────────────────────────────────────────────────
-  private expandDeck() {
-    for (const entry of this.data_.deck) {
-      const card = CARD_DATA_LIST.find(c => c.id === entry.cardId);
-      if (card) {
-        for (let i = 0; i < entry.count; i++) this.expandedDeck.push(card);
+  // 배틀 덱 초기 생성 및 초기 셔플
+  private initBattleDeck() {
+    this.drawPile = [];
+    this.discardPile = [];
+    
+    this.data_.deck.forEach(entry => {
+      const cardDef = CARD_DATA_LIST.find(c => c.id === entry.cardId);
+      if (cardDef) {
+        for (let i = 0; i < entry.count; i++) {
+          this.drawPile.push({ ...cardDef, mult: entry.mult ?? 1 });
+        }
       }
-    }
-    if (this.expandedDeck.length === 0) {
+    });
+    
+    if (this.drawPile.length === 0) {
       // 안전장치: 기본 카드로 채우기
-      this.expandedDeck = CARD_DATA_LIST.slice(0, 5);
+      this.drawPile = CARD_DATA_LIST.slice(0, 5).map(c => ({ ...c, mult: 1 }));
     }
+    
+    // 초기 셔플
+    this.drawPile.sort(() => Math.random() - 0.5);
+
+    // 덱 로그 (중복 체크용)
+    console.log(`[Battle] Final deck count: ${this.drawPile.length}`);
+    this.drawPile.forEach((c, idx) => {
+      console.log(` - Slot ${idx}: ID=${c.id}, Name=${c.nameKey}, Stars=${c.stars}, Mult=${c.mult}`);
+    });
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -156,13 +205,34 @@ export default class BattleScene extends Phaser.Scene {
     bg.fillStyle(COLOR_BG, 1);
     bg.fillRect(0, 0, this.W, this.H);
 
+    const elemToBg: Record<string, string> = {
+      fire: 'bg_battle_fire',
+      grass: 'bg_battle_grass',
+      earth: 'bg_battle_earth',
+      lightning: 'bg_battle_lightning',
+      water: 'bg_battle_water',
+    };
+    
+    // 맵 타입 속성에 따른 bg_battle_* 선택 (없는 경우 bg1 폴백)
+    const bgKey = elemToBg[this.data_.mapElement] || 'bg1';
+
+    const bgImage = this.add.image(this.W / 2, this.H / 2, bgKey);
+    // 화면 크기에 꽉 차게 덮기
+    const scaleX = this.W / bgImage.width;
+    const scaleY = this.H / bgImage.height;
+    const scale = Math.max(scaleX, scaleY);
+    bgImage.setScale(scale);
+    
+    // 카드와 텍스트가 잘 보이도록 배경을 살짝 어둡게 처리
+    bgImage.setTint(0x777777);
+
     // 황금 테두리
     const border = this.add.graphics();
     border.lineStyle(2, COLOR_GOLD, 0.6);
     border.strokeRect(4, 4, this.W - 8, this.H - 8);
 
     // 구분선 (카드 영역 위)
-    const divY = this.H * 0.62;
+    const divY = this.H * 0.65;
     const divLine = this.add.graphics();
     divLine.lineStyle(1, COLOR_GOLD, 0.3);
     divLine.lineBetween(20, divY, this.W - 20, divY);
@@ -172,7 +242,7 @@ export default class BattleScene extends Phaser.Scene {
   // 캐릭터 스프라이트 (플레이어) + 적 컨테이너
   // ───────────────────────────────────────────────────────────────────────────
   private createCharacters() {
-    const charY   = this.H * 0.27;
+    const charY   = this.H * 0.39;
     const playerX = this.W * 0.18;
     const enemyX  = this.W * 0.82;
 
@@ -192,11 +262,12 @@ export default class BattleScene extends Phaser.Scene {
     }
 
     this.playerSprite = this.add.sprite(playerX, charY, texKey);
-    this.playerSprite.setDisplaySize(180, 240);
+    this.playerSprite.setDisplaySize(180 * this.uiScale, 240 * this.uiScale);
     this.playerSprite.play(animKey);
+    this.playerSprite.setFlipX(true); // 유저 요청: 배틀 시 캐릭터가 반대를 보게 함
 
     // 플레이어 이름 라벨
-    this.add.text(playerX, charY + 130, i18n.t('player') || '플레이어', {
+    this.add.text(playerX, charY + 130 * this.uiScale, i18n.t('player') || '플레이어', {
       fontFamily: FONT_L, fontSize: '14px', color: '#88aaff',
     }).setOrigin(0.5);
 
@@ -205,18 +276,18 @@ export default class BattleScene extends Phaser.Scene {
     this.enemyContainer = this.add.container(enemyX, charY);
 
     // 적 몸체 (컬러 사각형 + "idle 숨쉬기" 트위너)
-    this.enemyBody = this.add.rectangle(0, 0, 160, 220, elemColor, 0.15);
+    this.enemyBody = this.add.rectangle(0, 0, 160 * this.uiScale, 220 * this.uiScale, elemColor, 0.15);
     this.enemyBody.setStrokeStyle(3, elemColor, 0.9);
     this.enemyContainer.add(this.enemyBody);
 
     // 속성 아이콘
     const attrIdx  = ELEMENT_ATTR_INDEX[this.data_.mapElement] ?? 5;
-    const attrIcon = this.add.image(0, -60, 'attr_icons', `attr_${attrIdx}`);
-    attrIcon.setDisplaySize(56, 56);
+    const attrIcon = this.add.image(0, -60 * this.uiScale, 'attr_icons', `attr_${attrIdx}`);
+    attrIcon.setDisplaySize(56 * this.uiScale, 56 * this.uiScale);
     this.enemyContainer.add(attrIcon);
 
     // 적 이름
-    const enemyNameTxt = this.add.text(0, 90, this.data_.mobName, {
+    const enemyNameTxt = this.add.text(0, 90 * this.uiScale, this.data_.mobName, {
       fontFamily: FONT_B, fontSize: '16px', color: '#ff8888',
     }).setOrigin(0.5);
     this.enemyContainer.add(enemyNameTxt);
@@ -238,7 +309,7 @@ export default class BattleScene extends Phaser.Scene {
   private createHpBars() {
     const barW  = Math.round(this.W * 0.22);
     const barH  = 14;
-    const barY  = this.H * 0.47;
+    const barY  = this.H * 0.59;
 
     this.createHpBar(this.W * 0.18, barY, barW, barH, true);
     this.createHpBar(this.W * 0.82, barY, barW, barH, false);
@@ -284,7 +355,7 @@ export default class BattleScene extends Phaser.Scene {
       fontFamily: FONT_B, fontSize: '22px', color: '#d4af37',
     }).setOrigin(0.5);
 
-    this.statusText = this.add.text(cx, this.H * 0.52, '', {
+    this.statusText = this.add.text(cx, this.H * 0.65, '', {
       fontFamily: FONT_M, fontSize: '16px', color: '#cccccc',
       wordWrap: { width: this.W * 0.35 }, align: 'center',
     }).setOrigin(0.5);
@@ -302,15 +373,17 @@ export default class BattleScene extends Phaser.Scene {
   // 카드 영역 (손패 표시 + 리롤 버튼 원)
   // ───────────────────────────────────────────────────────────────────────────
   private createCardArea() {
-    const areaY  = this.H * 0.65;
-    const cardW  = Math.round(180 * CARD_SCALE);
-    const cardH  = Math.round(252 * CARD_SCALE);
-    const gap    = Math.round(this.W * 0.01);
+    const cardScale = Math.min(CARD_SCALE, (this.W * 0.75) / (CARD_WIDTH * HAND_SIZE));
+    const cardH  = Math.round(CARD_HEIGHT * cardScale);
+    const cardW  = Math.round(CARD_WIDTH * cardScale);
+    const gap    = Math.round(this.W * 0.02);
     const totalW = HAND_SIZE * cardW + (HAND_SIZE - 1) * gap;
-    const startX = (this.W - totalW) / 2;
+    // 카드들을 좀 더 촘촘하게 중앙 좌측에 배치해 공격 버튼 공간 확보
+    const startX = (this.W - totalW) / 2 - (this.W * 0.05);
+    const areaY  = this.H - cardH / 2 - 20;
 
     // 리롤 버튼 원 (카드 위쪽)
-    const circleY = areaY - cardH / 2 - 28;
+    const circleY = areaY - cardH / 2 - 28 * this.uiScale;
     for (let i = 0; i < HAND_SIZE; i++) {
       const cx = startX + i * (cardW + gap) + cardW / 2;
       const btn = this.makeRerollCircle(cx, circleY, i);
@@ -353,9 +426,11 @@ export default class BattleScene extends Phaser.Scene {
   // ───────────────────────────────────────────────────────────────────────────
   private createAttackButton() {
     const btnW = Math.round(this.W * 0.18);
-    const btnH = 52;
-    const btnX = this.W * 0.5;
-    const btnY = this.H * 0.565;
+    const btnH = Math.round(52 * this.uiScale);
+    
+    // 우측 하단에 배치
+    const btnX = this.W - btnW / 2 - 20 * this.uiScale;
+    const btnY = this.H - btnH / 2 - 20 * this.uiScale;
 
     const cont = this.add.container(btnX, btnY);
     const bg   = this.add.graphics();
@@ -365,18 +440,39 @@ export default class BattleScene extends Phaser.Scene {
     bg.strokeRoundedRect(-btnW / 2, -btnH / 2, btnW, btnH, 10);
 
     const lbl = this.add.text(0, 0, i18n.t('bossStartFight') || '공격!', {
-      fontFamily: FONT_B, fontSize: '20px', color: '#ffffff',
+      fontFamily: FONT_B, fontSize: `${Math.round(20 * this.uiScale)}px`, color: '#ffffff',
     }).setOrigin(0.5);
 
     cont.add([bg, lbl]);
+    cont.setData('w', btnW).setData('h', btnH);
     cont.setInteractive(
       new Phaser.Geom.Rectangle(-btnW / 2, -btnH / 2, btnW, btnH),
       Phaser.Geom.Rectangle.Contains,
     );
-    cont.on('pointerover', () => lbl.setColor('#ffdb58').setScale(1.05));
-    cont.on('pointerout',  () => lbl.setColor('#ffffff').setScale(1));
+    cont.on('pointerover', () => { if (this.attackBtn.alpha === 1) lbl.setColor('#ffdb58').setScale(1.05); });
+    cont.on('pointerout',  () => { lbl.setColor('#ffffff').setScale(1); });
     cont.on('pointerdown', () => this.onAttack());
     this.attackBtn = cont;
+
+    // 콤보 정보 텍스트 (공격 버튼 바로 위)
+    this.comboInfoText = this.add.text(this.W * 0.5, btnY - 45, '', {
+      fontFamily: FONT_B, fontSize: '15px', color: '#ffeb3b', align: 'center', stroke: '#000000', strokeThickness: 3
+    }).setOrigin(0.5);
+
+    // 쉴드 뱃지 (플레이어 HP바 아래)
+    const badgeX = this.W * 0.18;
+    const badgeY = this.H * 0.48;
+    this.shieldBadge = this.add.container(badgeX, badgeY);
+    this.shieldBadge.setVisible(false);
+    const badgeBg = this.add.graphics();
+    badgeBg.fillStyle(0x1a3a6c, 0.92);
+    badgeBg.lineStyle(2, 0x56b4f7, 1);
+    badgeBg.fillRoundedRect(-58, -16, 116, 32, 8);
+    badgeBg.strokeRoundedRect(-58, -16, 116, 32, 8);
+    const badgeTxt = this.add.text(0, 0, '', {
+      fontFamily: FONT_B, fontSize: '16px', color: '#56b4f7', stroke: '#000', strokeThickness: 3
+    }).setOrigin(0.5).setName('badgeTxt');
+    this.shieldBadge.add([badgeBg, badgeTxt]);
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -386,17 +482,17 @@ export default class BattleScene extends Phaser.Scene {
     const popW = Math.round(this.W * 0.20);
     const popH = 110;
 
-    this.playerStatsPop = this.makeStatsPop(this.W * 0.32, this.H * 0.26, popW, popH, true);
-    this.enemyStatsPop  = this.makeStatsPop(this.W * 0.68, this.H * 0.26, popW, popH, false);
+    this.playerStatsPop = this.makeStatsPop(this.W * 0.32, this.H * 0.38, popW, popH, true);
+    this.enemyStatsPop  = this.makeStatsPop(this.W * 0.68, this.H * 0.38, popW, popH, false);
 
     // 플레이어 캐릭터 영역 hover zone
-    const playerZone = this.add.zone(this.W * 0.18, this.H * 0.27, 200, 280)
+    const playerZone = this.add.zone(this.W * 0.18, this.H * 0.39, 200, 280)
       .setInteractive();
     playerZone.on('pointerover', () => this.playerStatsPop.setVisible(true));
     playerZone.on('pointerout',  () => this.playerStatsPop.setVisible(false));
 
     // 적 hover zone
-    const enemyZone = this.add.zone(this.W * 0.82, this.H * 0.27, 200, 280)
+    const enemyZone = this.add.zone(this.W * 0.82, this.H * 0.39, 200, 280)
       .setInteractive();
     enemyZone.on('pointerover', () => this.enemyStatsPop.setVisible(true));
     enemyZone.on('pointerout',  () => this.enemyStatsPop.setVisible(false));
@@ -444,59 +540,66 @@ export default class BattleScene extends Phaser.Scene {
   // 손패 드로우
   // ───────────────────────────────────────────────────────────────────────────
   private drawHand() {
-    // 덱을 섞어서 5장 뽑기
-    const shuffled = [...this.expandedDeck].sort(() => Math.random() - 0.5);
-    this.hand         = shuffled.slice(0, HAND_SIZE);
+    // 이전 손패는 discardPile로
+    if (this.hand.length > 0) {
+      this.discardPile.push(...this.hand);
+      this.hand = [];
+    }
+    
+    for (let i = 0; i < HAND_SIZE; i++) {
+      if (this.drawPile.length === 0) {
+        // 뽑을 카드가 없으면 discardPile을 다시 셔플해서 채움
+        if (this.discardPile.length > 0) {
+          this.drawPile = [...this.discardPile].sort(() => Math.random() - 0.5);
+          this.discardPile = [];
+          console.log(`[Battle] Draw pile empty. Reshuffling ${this.drawPile.length} cards from discard pile.`);
+        } else {
+          // 진짜 없으면 종료 (보통 발생하지 않음)
+          break;
+        }
+      }
+      this.hand.push(this.drawPile.shift()!);
+    }
+    
     this.rerollsUsed  = Array(HAND_SIZE).fill(false);
+    this.selectedCards= Array(HAND_SIZE).fill(false);
+    this.selectionOrder = [];
   }
 
   // ───────────────────────────────────────────────────────────────────────────
   // 카드 슬롯 렌더링 (손패 변경 시마다 호출)
   // ───────────────────────────────────────────────────────────────────────────
   private refreshCardDisplay() {
-    const cardW = Math.round(180 * CARD_SCALE);
-    const cardH = Math.round(252 * CARD_SCALE);
+    const cardScale = Math.min(CARD_SCALE, (this.W * 0.75) / (CARD_WIDTH * HAND_SIZE));
+    const cardW = Math.round(CARD_WIDTH * cardScale);
+    const cardH = Math.round(CARD_HEIGHT * cardScale);
+    const areaY = this.H - cardH / 2 - 20;
 
     this.cardContainers.forEach((cont, i) => {
       cont.removeAll(true);
-      const card = this.hand[i];
-      if (!card) return;
+      const cardData = this.hand[i];
+      if (!cardData) return;
 
-      const elemColor = ELEM_COLORS[card.element] ?? 0xffffff;
+      const isSelected = this.selectedCards[i];
+      cont.y = areaY;
 
-      // 카드 배경
-      const g = this.add.graphics();
-      g.fillStyle(0x1a1a2a, 1);
-      g.lineStyle(2, elemColor, 0.85);
-      g.fillRoundedRect(-cardW / 2, -cardH / 2, cardW, cardH, 6);
-      g.strokeRoundedRect(-cardW / 2, -cardH / 2, cardW, cardH, 6);
-      cont.add(g);
+      // Card 객체 생성
+      const cardObj = new Card(this, -cardW / 2, -cardH / 2, cardData);
+      cardObj.setScale(cardScale);
+      cont.add(cardObj);
 
-      // 카드 이미지
-      const frameKey = `card_${card.spriteRow}_${card.spriteCol}`;
-      if (this.textures.exists('card_sprites')) {
-        const img = this.add.image(0, -8, 'card_sprites', frameKey);
-        img.setDisplaySize(cardW - 8, Math.round(cardH * 0.5));
-        cont.add(img);
+      // 선택 표시 테두리 및 순위 배지
+      if (isSelected) {
+        const selBorder = this.add.graphics();
+        selBorder.lineStyle(4, 0x2ecc71, 1);
+        selBorder.strokeRoundedRect(-cardW / 2 + 2, -cardH / 2 + 2, cardW - 4, cardH - 4, 8);
+        const orderIdx = this.selectionOrder.indexOf(i) + 1;
+        const badgeBg = this.add.graphics();
+        badgeBg.fillStyle(0x2ecc71, 1);
+        badgeBg.fillCircle(cardW / 2 - 10, -cardH / 2 + 10, 14);
+        const badgeTxt = this.add.text(cardW / 2 - 10, -cardH / 2 + 10, orderIdx.toString(), { fontFamily: FONT_B, fontSize: '18px', color: '#ffffff' }).setOrigin(0.5);
+        cont.add([selBorder, badgeBg, badgeTxt]);
       }
-
-      // 속성 아이콘
-      const attrIcon = this.add.image(cardW / 2 - 10, -cardH / 2 + 10, 'attr_icons', `attr_${card.attrIndex}`);
-      attrIcon.setDisplaySize(18, 18);
-      cont.add(attrIcon);
-
-      // 카드 이름
-      const nameTxt = this.add.text(0, cardH / 2 - 28, i18n.t(card.nameKey) || card.nameKey, {
-        fontFamily: FONT_M, fontSize: '11px', color: '#ffffff',
-        wordWrap: { width: cardW - 8 }, align: 'center',
-      }).setOrigin(0.5);
-      cont.add(nameTxt);
-
-      // ATK / DEF 스탯
-      const statTxt = this.add.text(0, cardH / 2 - 12, `ATK ${card.attack}  DEF ${card.defense}`, {
-        fontFamily: FONT_L, fontSize: '10px', color: '#aaaaaa',
-      }).setOrigin(0.5);
-      cont.add(statTxt);
 
       // 리롤 사용됨 표시
       if (this.rerollsUsed[i]) {
@@ -505,6 +608,10 @@ export default class BattleScene extends Phaser.Scene {
         usedOverlay.fillRoundedRect(-cardW / 2, -cardH / 2, cardW, cardH, 6);
         cont.add(usedOverlay);
       }
+
+      cont.setInteractive(new Phaser.Geom.Rectangle(-cardW / 2, -cardH / 2, cardW, cardH), Phaser.Geom.Rectangle.Contains);
+      cont.off('pointerdown');
+      cont.on('pointerdown', () => this.toggleCardSelection(i));
     });
 
     // 리롤 버튼 상태 갱신
@@ -526,88 +633,271 @@ export default class BattleScene extends Phaser.Scene {
   private onReroll(idx: number) {
     if (this.isAnimating || this.rerollsUsed[idx] || this.battleEnded) return;
 
-    // 현재 카드를 제외한 덱에서 랜덤 뽑기
-    const candidates = this.expandedDeck.filter(c => c !== this.hand[idx]);
-    if (candidates.length === 0) return;
+    if (this.drawPile.length === 0) {
+      if (this.discardPile.length > 0) {
+        this.drawPile = [...this.discardPile].sort(() => Math.random() - 0.5);
+        this.discardPile = [];
+        console.log(`[Battle] Draw pile empty on Reroll. Reshuffling.`);
+      } else {
+        return;
+      }
+    }
 
-    this.hand[idx]       = candidates[Math.floor(Math.random() * candidates.length)];
+    this.hand[idx] = this.drawPile.shift()!;
     this.rerollsUsed[idx] = true;
+    this.selectedCards[idx] = false;
+    this.selectionOrder = this.selectionOrder.filter(i => i !== idx);
     this.refreshCardDisplay();
+    this.updateAttackButtonState();
 
     // 리롤 원 애니메이션
     const btn = this.rerollBtns[idx];
     this.tweens.add({ targets: btn, scaleX: 1.3, scaleY: 1.3, duration: 80, yoyo: true });
   }
 
+  private toggleCardSelection(idx: number) {
+    if (this.isAnimating || this.battleEnded) return;
+    
+    if (this.selectedCards[idx]) {
+      this.selectedCards[idx] = false;
+      this.selectionOrder = this.selectionOrder.filter(i => i !== idx);
+    } else {
+      if (this.selectionOrder.length >= 3) return; // 3개까지만 제한
+      this.selectedCards[idx] = true;
+      this.selectionOrder.push(idx);
+    }
+    this.refreshCardDisplay();
+    this.updateAttackButtonState();
+  }
+  
+  private updateAttackButtonState() {
+    if (!this.attackBtn || this.battleEnded || this.isAnimating) return;
+    const count = this.selectionOrder.length;
+    const lbl = this.attackBtn.getAt(1) as Phaser.GameObjects.Text;
+    const bw = this.attackBtn.getData('w');
+    const bh = this.attackBtn.getData('h');
+    
+    if (count === 3) {
+      this.attackBtn.setAlpha(1);
+      this.attackBtn.setInteractive(
+        new Phaser.Geom.Rectangle(-bw/2, -bh/2, bw, bh),
+        Phaser.Geom.Rectangle.Contains
+      );
+      lbl.setText(i18n.t('bossStartFight') || '공격!');
+    } else {
+      this.attackBtn.setAlpha(0.6);
+      this.attackBtn.disableInteractive();
+      lbl.setText(`카드 3장 선택 (${count}/3)`);
+    }
+
+    // 콤보 텍스트 업데이트
+    if (this.comboInfoText) {
+      this.comboInfoText.setText('');
+      if (count >= 2) {
+        const activeCards = this.selectionOrder.map(i => this.hand[i]);
+        const sameCardsCount = Math.max(...activeCards.map(c => activeCards.filter(ac => ac.id === c.id).length));
+        const sameElemsCount = Math.max(...activeCards.map(c => c.element !== 'normal' ? activeCards.filter(ac => ac.element === c.element).length : 0));
+        
+        let comboMsg = '';
+        if (sameCardsCount >= 2) {
+          comboMsg = `동일 카드 ${sameCardsCount}장 효과 적용!`;
+          this.comboInfoText.setColor('#ffeb3b');
+        } else if (sameElemsCount >= 2) {
+          comboMsg = `동일 속성 ${sameElemsCount}장 효과 적용!`;
+          this.comboInfoText.setColor('#ff9800');
+        }
+        this.comboInfoText.setText(comboMsg);
+      }
+    }
+  }
+
   // ───────────────────────────────────────────────────────────────────────────
   // 공격 처리
   // ───────────────────────────────────────────────────────────────────────────
-  private onAttack() {
+  private async onAttack() {
     if (this.isAnimating || this.battleEnded) return;
+    if (this.selectionOrder.length !== 3) return;
+
     this.isAnimating = true;
     this.attackBtn.disableInteractive();
 
-    // ── 손패 분석 ──────────────────────────────────────────────────────────
-    const elemCount: Record<string, number> = {};
-    let totalCardAtk = 0;
-    for (const card of this.hand) {
-      elemCount[card.element] = (elemCount[card.element] ?? 0) + 1;
-      totalCardAtk += card.attack;
+    if (this.comboInfoText) this.comboInfoText.setText('');
+
+    const activeCards = this.selectionOrder.map(i => this.hand[i]);
+    const elemTypes = activeCards.map(c => c.element);
+    const isFastForward = elemTypes[0] !== 'normal' && elemTypes.every(e => e === elemTypes[0]);
+
+    this.currentTurnDefense = 0;
+
+    // 0~6: 계산 식을 3장 각각 반복
+    for (let step = 0; step < 3; step++) {
+      if (this.enemyCurrentHp <= 0 || this.playerCurrentHp <= 0) break;
+      await this.executeCardAction(step, activeCards, isFastForward);
     }
 
-    // 가장 많은 속성 (dominant element)
-    const dominantElem = Object.entries(elemCount)
-      .sort((a, b) => b[1] - a[1])[0][0] as CardElement;
-    const dominantCount = elemCount[dominantElem] ?? 0;
-
-    // ── 데미지 계산 ────────────────────────────────────────────────────────
-    let dmg = totalCardAtk + this.data_.playerAtk;
-
-    // 3장 이상 동일 속성 → 보너스
-    if (dominantCount >= 3) dmg = Math.floor(dmg * 1.3);
-
-    // 속성 유불리
-    const { mapElement } = this.data_;
-    if (TYPE_BEATS[dominantElem] === mapElement) {
-      dmg = Math.floor(dmg * 1.5);
-    } else if (TYPE_BEATS[mapElement] === dominantElem) {
-      dmg = Math.floor(dmg * 0.5);
+    // 카드 3회 공격 이후: 플레이어 순수 기본 공격력(무기 연산값)으로 마지막 4번째 체술 타격
+    if (this.enemyCurrentHp > 0 && this.playerCurrentHp > 0) {
+      if (this.data_.playerAtk > 0) {
+        await this.executePlayerBaseAttack(isFastForward);
+      }
     }
 
-    // 크리티컬
-    const isCrit = Math.random() * 100 < this.data_.playerCrit;
-    if (isCrit) dmg = Math.floor(dmg * this.data_.playerCritDmg);
+    if (this.enemyCurrentHp <= 0) {
+      this.time.delayedCall(800, () => this.endBattle(true));
+      return;
+    }
 
-    // 적 방어력 적용: dmg × (50 / (50 + enemyDef))
-    dmg = Math.max(1, Math.floor(dmg * (50 / (50 + this.enemyDef))));
+    // 적 반격
+    this.time.delayedCall(800, () => this.doEnemyTurn());
+  }
 
-    // ── 플레이어 공격 애니메이션 ───────────────────────────────────────────
-    this.playPlayerAttack(dominantElem, () => {
-      // 적 HP 감소
-      this.enemyCurrentHp = Math.max(0, this.enemyCurrentHp - dmg);
-      this.updateEnemyHpBar();
-      this.playEnemyHit(dominantElem);
+  private async executeCardAction(step: number, cards: CardData[], isFastForward: boolean): Promise<void> {
+    return new Promise(resolve => {
+      const card = cards[step];
+      const baseVal = card.value * (card.mult || 1.0) * (this.data_.playerCardMult || 1.0);
+      let dmg = 0;
+      let heal = 0;
+      let shield = 0;
 
-      // 상태 텍스트
-      const critTxt = isCrit ? ' ★CRIT!' : '';
-      const bonusTxt = dominantCount >= 3 ? ' (+속성 보너스)' : '';
-      this.statusText.setText(`${this.data_.mobName}에게 ${dmg}${critTxt}${bonusTxt}`).setColor('#2ecc71');
-
-      // 적 사망 체크
-      if (this.enemyCurrentHp <= 0) {
-        this.time.delayedCall(800, () => this.endBattle(true));
-        return;
+      // 0. 기초 수치 분배
+      if (card.key === 'shield' || card.key === 'defense') {
+        shield = baseVal * (this.data_.playerShieldMult || 1.0);
+      } else if (card.key === 'hp') {
+        heal = baseVal;
+      } else if (card.key === 'arrow') {
+        dmg = baseVal;
+      } else {
+        // attack, spear 등
+        dmg = baseVal;
       }
 
-      // 적 반격
-      this.time.delayedCall(800, () => this.doEnemyTurn());
+      if (dmg > 0) {
+        // 1. 속성 데미지 계산
+        if (card.element !== 'normal') {
+          if (TYPE_BEATS[card.element] === this.data_.mapElement) dmg *= 1.5;
+          else if (TYPE_BEATS[this.data_.mapElement] === card.element) dmg *= 0.5;
+        }
+
+        // 2. 크리티컬 여부
+        let critChance = this.data_.playerCrit;
+        if (card.key === 'spear') {
+          if (this.enemyCurrentHp <= dmg * this.data_.playerCritDmg) {
+            critChance = 100;
+          }
+        }
+        const isCrit = Math.random() * 100 < critChance;
+
+        // 3. 데미지 * 크리뎀 계산
+        let cardDmg = isCrit ? dmg * this.data_.playerCritDmg : dmg;
+
+        // 4. 추뎀 산출 (콤보 계산)
+        const sameCards = cards.slice(0, step + 1).filter(c => c.id === card.id);
+        const sameElems = cards.slice(0, step + 1).filter(c => c.element === card.element && card.element !== 'normal');
+
+        let bonusDmg = 0;
+        if (sameCards.length === 2) {
+          bonusDmg = cardDmg * 0.5;
+        } else if (sameCards.length === 3) {
+          bonusDmg = cardDmg * 1.0;
+        } else if (sameElems.length === 2) {
+          const vals = sameElems.map(c => c.value * (c.mult || 1.0) * (this.data_.playerCardMult || 1.0));
+          bonusDmg = Math.min(...vals) * 0.2;
+        } else if (sameElems.length === 3) {
+          const sorted = [...sameElems].map(c => c.value * (c.mult || 1.0) * (this.data_.playerCardMult || 1.0)).sort((a, b) => a - b);
+          const median = sorted[1];
+          bonusDmg = median * 0.4;
+        }
+
+        let finalDmg = cardDmg + bonusDmg;
+        const totalBeforeDef = finalDmg;
+
+        // 5. 적 방어력 적용
+        finalDmg = Math.max(1, Math.floor(finalDmg * (50 / (50 + Math.max(0, this.enemyDef)))));
+
+        console.log(`--- [플레이어 타격 - Step ${step + 1}] ---`);
+        console.log(`> 기초 발동 수치(무기/버프 포함 baseVal): ${baseVal.toFixed(2)}`);
+        console.log(`> 속성 유리/불리 적용 후: ${dmg.toFixed(2)}`);
+        console.log(`> 크리티컬 발동여부: ${isCrit ? '치명타!' : '일반'} (크리적용 후: ${cardDmg.toFixed(2)})`);
+        console.log(`> 중첩/연계 보너스 추뎀 (bonusDmg): ${bonusDmg.toFixed(2)}`);
+        console.log(`> 적 방어력 적용 전 총합: ${totalBeforeDef.toFixed(2)} | 적 방어력: ${this.enemyDef}`);
+        console.log(`> 최종 피해량: ${finalDmg}`);
+        console.log(`----------------------------------`);
+
+        // 6. 적용 및 연출
+        this.playPlayerAttack(card.element, () => {
+          this.enemyCurrentHp = Math.max(0, this.enemyCurrentHp - finalDmg);
+          this.updateEnemyHpBar();
+          this.playEnemyHit(card.element, isCrit);
+
+          this.showFloatingDamage(this.enemyContainer.x, this.enemyContainer.y - 40, finalDmg, isCrit, '#2ecc71');
+          
+          const critTxt = isCrit ? ' ★CRIT!' : '';
+          const comboTxt = bonusDmg > 0 ? ' (추가 데미지!)' : '';
+          this.statusText.setText(`${this.data_.mobName}에게 ${Math.floor(finalDmg)}${critTxt}${comboTxt}`).setColor('#2ecc71');
+          resolve();
+        }, isFastForward);
+
+      } else {
+        // 비공격성 카드 처리
+        if (shield > 0) {
+          this.currentTurnDefense += shield;
+          this.statusText.setText(`방어력 ${Math.floor(shield)} 증가!`).setColor('#3498db');
+          // 쉴드 뱃지 표시
+          this.updateShieldBadge();
+        }
+        if (heal > 0) {
+          this.playerCurrentHp = Math.min(this.data_.playerMaxHp, this.playerCurrentHp + heal);
+          this.updatePlayerHpBar();
+          this.statusText.setText(`HP ${Math.floor(heal)} 회복!`).setColor('#2ecc71');
+        }
+        this.time.delayedCall(isFastForward ? 100 : 350, () => resolve());
+      }
+    });
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 플레이어 기본 체술 타격 (카드 적용 후)
+  // ───────────────────────────────────────────────────────────────────────────
+  private executePlayerBaseAttack(isFastForward: boolean): Promise<void> {
+    return new Promise(resolve => {
+      let dmg = this.data_.playerAtk;
+      if (dmg <= 0) {
+        resolve();
+        return;
+      }
+      
+      const isCrit = Math.random() * 100 < this.data_.playerCrit;
+      let cardDmg = isCrit ? dmg * this.data_.playerCritDmg : dmg;
+      let finalDmg = cardDmg;
+
+      // 적 방어력 적용
+      finalDmg = Math.max(1, Math.floor(finalDmg * (50 / (50 + Math.max(0, this.enemyDef)))));
+
+      console.log(`--- [플레이어 타격 - 최종 체술] ---`);
+      console.log(`> 기초 발동 수치(나의 무기 공격력): ${dmg.toFixed(2)}`);
+      console.log(`> 크리티컬 발동여부: ${isCrit ? '치명타!' : '일반'} (크리적용 후: ${cardDmg.toFixed(2)})`);
+      console.log(`> 적 방어력 적용 전 총합: ${cardDmg.toFixed(2)} | 적 방어력: ${this.enemyDef}`);
+      console.log(`> 최종 피해량: ${finalDmg}`);
+      console.log(`----------------------------------`);
+
+      this.playPlayerAttack('normal', () => {
+        this.enemyCurrentHp = Math.max(0, this.enemyCurrentHp - finalDmg);
+        this.updateEnemyHpBar();
+        this.playEnemyHit('normal', isCrit);
+
+        this.showFloatingDamage(this.enemyContainer.x, this.enemyContainer.y - 40, finalDmg, isCrit, '#2ecc71');
+        
+        const critTxt = isCrit ? ' ★CRIT!' : '';
+        this.statusText.setText(`마무리 타격! ${this.data_.mobName}에게 ${Math.floor(finalDmg)}${critTxt}`).setColor('#2ecc71');
+        resolve();
+      }, isFastForward);
     });
   }
 
   // ───────────────────────────────────────────────────────────────────────────
   // 플레이어 공격 트위너 (속성별 다른 스타일)
   // ───────────────────────────────────────────────────────────────────────────
-  private playPlayerAttack(elem: string, onComplete: () => void) {
+  private playPlayerAttack(elem: string, onComplete: () => void, isFastForward = false) {
     const startX = this.playerSprite.x;
     const dashX  = startX + this.W * 0.28;
 
@@ -623,7 +913,10 @@ export default class BattleScene extends Phaser.Scene {
       water: 250, fire: 150, grass: 300, lightning: 80, earth: 350, normal: 200,
     };
     const ease     = easeMap[elem]  ?? 'Power1.easeInOut';
-    const dashDur  = durMap[elem]   ?? 200;
+    let dashDur  = durMap[elem]   ?? 200;
+    if (isFastForward) {
+      dashDur = Math.max(50, Math.floor(dashDur * 0.4));
+    }
     const elemColor = ELEM_COLORS[elem] ?? 0xffffff;
 
     // 속성 색 tint
@@ -665,22 +958,29 @@ export default class BattleScene extends Phaser.Scene {
   // ───────────────────────────────────────────────────────────────────────────
   // 적 피격 이펙트
   // ───────────────────────────────────────────────────────────────────────────
-  private playEnemyHit(elem: string) {
+  private playEnemyHit(elem: string, isCrit: boolean = false) {
     const elemColor = ELEM_COLORS[elem] ?? 0xff0000;
     this.enemyIdleTween?.pause();
 
     this.enemyBody.setFillStyle(elemColor, 0.6);
 
-    // shake
     const origX = this.enemyContainer.x;
+    
+    // 크리티컬이면 화면 흔들림 효과
+    if (isCrit) {
+      this.cameras.main.shake(200, 0.01);
+      this.enemyContainer.setScale(1.1);
+    }
+    
     this.tweens.add({
       targets:  this.enemyContainer,
-      x:        { from: origX - 12, to: origX + 12 },
-      duration: 60,
-      repeat:   3,
+      x:        { from: origX - (isCrit ? 18 : 12), to: origX + (isCrit ? 18 : 12) },
+      duration: isCrit ? 40 : 60,
+      repeat:   isCrit ? 5 : 3,
       yoyo:     true,
       onComplete: () => {
         this.enemyContainer.x = origX;
+        this.enemyContainer.setScale(1.0);
         this.enemyBody.setFillStyle(ELEM_COLORS[this.data_.mapElement] ?? 0xff6666, 0.15);
         this.enemyIdleTween?.resume();
       },
@@ -691,9 +991,29 @@ export default class BattleScene extends Phaser.Scene {
   // 적 턴
   // ───────────────────────────────────────────────────────────────────────────
   private doEnemyTurn() {
-    // 적 공격력 계산 (플레이어 방어력 적용)
+    // 적 방어력 무시하고 적 공격력에서 내 방어력 상쇄 (방어력 효율)
+    const enemyAtkOriginal = this.enemyAtk;
     let enemyDmg = this.enemyAtk;
     enemyDmg = Math.max(1, Math.floor(enemyDmg * (50 / (50 + this.data_.playerDef))));
+    const dmgAfterDef = enemyDmg;
+
+    // 쉴드 효과 (데미지 직접 상쇄)
+    if (this.currentTurnDefense > 0) {
+      enemyDmg = Math.max(0, enemyDmg - this.currentTurnDefense);
+    }
+
+    // 쉴드 뱃지 숨기기 (적 턴 시작 = 쉴드 소멸)
+    this.currentTurnDefense = 0;
+    this.shieldBadge?.setVisible(false);
+
+    console.log(`--- [적 타격 이벤트] ---`);
+    console.log(`> 적군 기초 공격력: ${enemyAtkOriginal}`);
+    console.log(`> 내 방어력(${this.data_.playerDef}) 감쇄 적용 후: ${dmgAfterDef}`);
+    if (this.currentTurnDefense > 0) {
+      console.log(`> 쉴드 직접 삭감값: -${this.currentTurnDefense}`);
+    }
+    console.log(`> 최종으로 받는 HP 피해: ${enemyDmg}`);
+    console.log(`------------------------`);
 
     // 적 공격 애니
     this.tweens.add({
@@ -706,8 +1026,10 @@ export default class BattleScene extends Phaser.Scene {
         this.updatePlayerHpBar();
         this.playPlayerHit();
 
+        this.showFloatingDamage(this.playerSprite.x, this.playerSprite.y - 40, enemyDmg, false, '#e74c3c');
+
         // 상태 텍스트
-        this.statusText.setText(`${i18n.t('player') || '내'} HP -${enemyDmg}`).setColor('#e74c3c');
+        this.statusText.setText(`${i18n.t('player') || '내'} HP -${Math.floor(enemyDmg)}`).setColor('#e74c3c');
 
         this.tweens.add({
           targets:  this.enemyContainer,
@@ -731,15 +1053,10 @@ export default class BattleScene extends Phaser.Scene {
             this.turnLabel.setText(`TURN ${this.currentTurn} / ${MAX_TURNS}`);
             this.drawHand();
             this.refreshCardDisplay();
+            this.updateAttackButtonState();
             this.time.delayedCall(300, () => {
               this.statusText.setText('');
-              this.attackBtn.setInteractive(
-                new Phaser.Geom.Rectangle(
-                  -Math.round(this.W * 0.09), -26,
-                  Math.round(this.W * 0.18), 52,
-                ),
-                Phaser.Geom.Rectangle.Contains,
-              );
+              this.isAnimating = false;
             });
           },
         });
@@ -751,17 +1068,58 @@ export default class BattleScene extends Phaser.Scene {
   // 플레이어 피격
   // ───────────────────────────────────────────────────────────────────────────
   private playPlayerHit() {
-    this.playerSprite.setTint(0xff4444);
+    this.playerSprite.setTint(0xff0000);
+    this.cameras.main.shake(200, 0.015); // 화면 흔들림
+
+    const origX = this.playerSprite.x;
     this.tweens.add({
       targets:  this.playerSprite,
-      x:        { from: this.playerSprite.x - 8, to: this.playerSprite.x + 8 },
-      duration: 60,
-      repeat:   2,
+      x:        { from: origX - 15, to: origX + 15 },
+      duration: 50,
+      repeat:   4,
       yoyo:     true,
       onComplete: () => {
-        this.playerSprite.x = this.W * 0.18;
+        this.playerSprite.x = origX;
         this.playerSprite.clearTint();
       },
+    });
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 데미지 플로팅 텍스트 이펙트
+  // ───────────────────────────────────────────────────────────────────────────
+  private showFloatingDamage(x: number, y: number, amount: number, isCrit: boolean, color: string) {
+    if (amount <= 0 && color !== '#e74c3c') return;
+
+    const txt = this.add.text(x, y, `-${Math.floor(amount)}`, {
+      fontFamily: FONT_B,
+      fontSize: isCrit ? '42px' : '28px',
+      color: color,
+      stroke: '#000000',
+      strokeThickness: isCrit ? 6 : 4,
+      fontStyle: isCrit ? 'italic' : 'normal'
+    }).setOrigin(0.5);
+
+    // 크리 텍스트
+    if (isCrit) {
+      const critObj = this.add.text(x, y - 35, 'CRITICAL!', {
+        fontFamily: FONT_B, fontSize: '20px', color: '#ffcc00', stroke: '#000', strokeThickness: 3
+      }).setOrigin(0.5);
+      
+      this.tweens.add({
+        targets: critObj, y: y - 60, alpha: 0, duration: 800, ease: 'Power2.easeOut',
+        onComplete: () => critObj.destroy()
+      });
+    }
+
+    this.tweens.add({
+      targets: txt,
+      y: y - (isCrit ? 80 : 50),
+      alpha: 0,
+      scale: isCrit ? 1.5 : 1,
+      duration: isCrit ? 1000 : 800,
+      ease: 'Power2.easeOut',
+      onComplete: () => txt.destroy()
     });
   }
 
@@ -801,6 +1159,16 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
+  // 쉴드 뱃지 텍스트 업데이트
+  // ───────────────────────────────────────────────────────────────────────────
+  private updateShieldBadge() {
+    if (!this.shieldBadge) return;
+    const txt = this.shieldBadge.getByName('badgeTxt') as Phaser.GameObjects.Text;
+    if (txt) txt.setText(`쉴드 ${Math.floor(this.currentTurnDefense)}`);
+    this.shieldBadge.setVisible(this.currentTurnDefense > 0);
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
   // 전투 종료
   // ───────────────────────────────────────────────────────────────────────────
   private endBattle(playerWon: boolean) {
@@ -826,10 +1194,10 @@ export default class BattleScene extends Phaser.Scene {
       alpha:    { from: 0, to: 0.6 },
       duration: 600,
       onComplete: () => {
-        const hpDelta = this.playerCurrentHp - this.data_.playerHp;
+        const hpDelta = this.playerCurrentHp - this.data_.playerHp; // 항상 실제 HP 변화량 전달
         this.game.events.emit('nodeEventComplete', {
           battleResult: playerWon ? 'win' : 'lose',
-          hpDelta:      playerWon ? 0 : hpDelta,
+          hpDelta,
           nodeId:       this.data_.nodeId,
         });
         this.scene.stop('NodeEventScene');

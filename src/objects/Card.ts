@@ -198,8 +198,23 @@ export default class Card extends Phaser.GameObjects.Container {
           color: '#b8a880',
           wordWrap: { width: CARD_WIDTH - PAD * 2 - INNER_PAD * 2 },
           lineSpacing: 3,
-        },
+        }
       ).setOrigin(0, 0),
     );
+
+    // 하단 우측 스탯 (key : value (mult)) - 도감에서는 표기 제외
+    const { key, value, mult } = this.cardInfo;
+    const isGallery = this.scene.scene.key === 'CardGalleryScene';
+    const multVal = mult ?? 1;
+    const statText = isGallery
+      ? `${key.toUpperCase()} : ${value}`
+      : `${key.toUpperCase()} : ${value} (${multVal})`;
+    
+    const statObj = this.scene.add.text(CARD_WIDTH - PAD - 2, CARD_HEIGHT - PAD - 2, statText, {
+      fontFamily: 'SBAggroB', fontSize: '14px', color: '#f5cc4a',
+      stroke: '#000000', strokeThickness: 4,
+    }).setOrigin(1, 1);
+    
+    this.add(statObj);
   }
 }
