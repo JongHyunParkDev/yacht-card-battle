@@ -176,11 +176,26 @@ export default class NodeEventScene extends Phaser.Scene {
   }
 
   private closeEvent(result: Record<string, unknown>) {
-    // 골드 변화가 있으면 시각적으로 보여주고 메인씬으로 보냄
+    // 골드 변화가 있으면 시각적으로 보여주고 결과 확인 버튼 생성
     if (result.goldDelta && typeof result.goldDelta === 'number') {
-      this.showGoldChange(result.goldDelta);
-      this.time.delayedCall(800, () => {
-        this.emitAndResume(result);
+      const delta = result.goldDelta;
+      const popupTitle = delta > 0 ? '보상 획득!' : '골드 소비';
+      const popupMsg = delta > 0 ? `${delta}G 를 획득하셨습니다.` : `${Math.abs(delta)}G 를 소비하셨습니다.`;
+      
+      this.tweens.add({
+        targets: this.root, alpha: 0, duration: 180,
+        onComplete: () => {
+          this.root.removeAll(true);
+          this.root.setAlpha(1);
+          const resTitle = this.makeHeader('row0_3', popupTitle, -this.H * 0.15);
+          const resMsg = this.add.text(0, 0, popupMsg, {
+            fontFamily: FONT_M, fontSize: '22px', color: '#f5cc4a'
+          }).setOrigin(0.5);
+          const confirmBtn = this.makeButton(0, this.H * 0.20, i18n.t('confirm') || '확인', 0x27ae60, () => {
+             this.emitAndResume(result);
+          }, 140, 50);
+          this.root.add([resTitle, resMsg, confirmBtn]);
+        }
       });
     } else {
       this.emitAndResume(result);
@@ -787,7 +802,21 @@ export default class NodeEventScene extends Phaser.Scene {
     }, Math.round(W * 0.32), 54);
 
     const refuseBtn = this.makeButton(W * 0.13, H * 0.28, i18n.t('heartRefuse'), 0x5c1a1a, () => {
-      this.closeEvent({ accepted: false });
+      this.tweens.add({
+        targets: this.root, alpha: 0, duration: 180,
+        onComplete: () => {
+          this.root.removeAll(true);
+          this.root.setAlpha(1);
+          const resTitle = this.makeHeader('row1_1', '제단을 떠남', -H * 0.1);
+          const resMsg = this.add.text(0, H * 0.05, '아무런 대가도 치르지 않고\n제단을 뒤로하고 떠납니다.', {
+            fontFamily: FONT_M, fontSize: '18px', color: '#aaaaaa', align: 'center'
+          }).setOrigin(0.5);
+          const confirmBtn = this.makeButton(0, H * 0.25, i18n.t('confirm') || '확인', 0x333333, () => {
+             this.closeEvent({ accepted: false });
+          }, 140, 50);
+          this.root.add([resTitle, resMsg, confirmBtn]);
+        }
+      });
     }, Math.round(W * 0.24), 56);
 
     if (!canAccept) acceptBtn.setAlpha(0.35).disableInteractive();
@@ -1231,7 +1260,21 @@ export default class NodeEventScene extends Phaser.Scene {
     // ── 받기 / 계속 버튼 (승리 후 확인 단계) ────────────────────────────────
     const takeNowBtn = this.makeButton(B2_LEFT, BY, i18n.t('receive'), 0x1a5c1a, () => {
       gameEnded = true;
-      this.closeEvent({ pokerCard: winStreak });
+      this.tweens.add({
+        targets: this.root, alpha: 0, duration: 180,
+        onComplete: () => {
+          this.root.removeAll(true);
+          this.root.setAlpha(1);
+          const resTitle = this.makeHeader('row1_4', '포커 보상 획득', -H * 0.15);
+          const resMsg = this.add.text(0, 0, `포커 게임을 종료하고\n장비 카드 ${winStreak}장을 획득합니다.`, {
+            fontFamily: FONT_M, fontSize: '20px', color: '#f5cc4a', align: 'center'
+          }).setOrigin(0.5);
+          const confirmBtn = this.makeButton(0, H * 0.22, i18n.t('confirm') || '확인', 0x27ae60, () => {
+            this.closeEvent({ pokerCard: winStreak });
+          }, 140, 50);
+          this.root.add([resTitle, resMsg, confirmBtn]);
+        }
+      });
     }, BW, 52).setVisible(false) as Phaser.GameObjects.Container;
 
     const continueBtn = this.makeButton(B2_RIGHT, BY, i18n.t('continueBtn'), 0x1a3a6c, () => {
@@ -1279,7 +1322,24 @@ export default class NodeEventScene extends Phaser.Scene {
             gameEnded = true;
             statusTxt.setText(i18n.f('pokerSweep', { n: winStreak })).setColor('#f5cc4a');
             betBtn.setVisible(false); foldBtn.setVisible(false);
-            this.time.delayedCall(1800, () => this.closeEvent({ pokerCard: winStreak }));
+            
+            this.time.delayedCall(1400, () => {
+              this.tweens.add({
+                targets: this.root, alpha: 0, duration: 180,
+                onComplete: () => {
+                  this.root.removeAll(true);
+                  this.root.setAlpha(1);
+                  const resTitle = this.makeHeader('row1_4', '포커 올킬!', -H * 0.15);
+                  const resMsg = this.add.text(0, 0, `모든 라운드에서 승인하여\n최종 보상 (${winStreak}장)을 획득하셨습니다!`, {
+                    fontFamily: FONT_B, fontSize: '22px', color: '#2ecc71', align: 'center'
+                  }).setOrigin(0.5);
+                  const confirmBtn = this.makeButton(0, H * 0.22, i18n.t('confirm') || '확인', 0x27ae60, () => {
+                    this.closeEvent({ pokerCard: winStreak });
+                  }, 140, 50);
+                  this.root.add([resTitle, resMsg, confirmBtn]);
+                }
+              });
+            });
             return;
           }
 
@@ -1316,9 +1376,24 @@ export default class NodeEventScene extends Phaser.Scene {
           if (betAttempts <= 0) {
             gameEnded = true;
             betBtn.setVisible(false); foldBtn.setVisible(false);
+            statusTxt.setText(i18n.t('pokerExhausted')).setColor('#e74c3c');
+
             this.time.delayedCall(1400, () => {
-              statusTxt.setText(i18n.t('pokerExhausted')).setColor('#e74c3c');
-              this.time.delayedCall(1200, () => this.closeEvent({ pokerCard: 0 }));
+              this.tweens.add({
+                targets: this.root, alpha: 0, duration: 180,
+                onComplete: () => {
+                  this.root.removeAll(true);
+                  this.root.setAlpha(1);
+                  const resTitle = this.makeHeader('row1_4', '도전 실패', -H * 0.15);
+                  const resMsg = this.add.text(0, 0, '모든 배팅 횟수를 소진하였습니다.\n보상을 획득하지 못했습니다.', {
+                    fontFamily: FONT_M, fontSize: '18px', color: '#e74c3c', align: 'center'
+                  }).setOrigin(0.5);
+                  const confirmBtn = this.makeButton(0, H * 0.22, i18n.t('confirm') || '확인', 0x3a1a1a, () => {
+                    this.closeEvent({ pokerCard: 0 });
+                  }, 140, 50);
+                  this.root.add([resTitle, resMsg, confirmBtn]);
+                }
+              });
             });
           } else {
             this.time.delayedCall(1200, () => {

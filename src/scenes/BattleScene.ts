@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { CARD_DATA_LIST, CardData, CardElement, ELEMENT_ATTR_INDEX } from '@src/data/cardData';
-import { getRandomEnemy } from '@src/data/enemyData';
+import { getRandomEnemy, EnemyDef } from '@src/data/enemyData';
 import { i18n } from '@src/utils/localization';
 import { WeaponType, CHAR_SPRITE_KEY, CHAR_FRAME_COUNT } from '@src/scenes/CharacterSelectScene';
 import Card, { CARD_WIDTH, CARD_HEIGHT } from '@src/objects/Card';
@@ -101,6 +101,7 @@ export default class BattleScene extends Phaser.Scene {
 
   private playerStatsPop!:  Phaser.GameObjects.Container;
   private enemyStatsPop!:   Phaser.GameObjects.Container;
+  private enemyDefData!:    EnemyDef;
 
   // ── idle 애니 트위너 (적 "숨쉬기") ────────────────────────────────────────
   private enemyIdleTween?: Phaser.Tweens.Tween;
@@ -134,16 +135,16 @@ export default class BattleScene extends Phaser.Scene {
     this.playerCurrentHp = playerHp;
     const rank = this.data_.isBoss ? 'boss' : (isElemental ? 'elite' : 'normal');
     const elem = isElemental ? this.data_.mapElement : 'normal';
-    const enemyDefData = getRandomEnemy(elem, rank);
+    this.enemyDefData = getRandomEnemy(elem, rank);
 
-    this.enemyMaxHp      = enemyDefData.hp;
-    this.enemyAtk        = enemyDefData.atk;
-    this.enemyDef        = enemyDefData.def;
-    this.enemyCurrentHp  = enemyDefData.hp;
+    this.enemyMaxHp      = this.enemyDefData.hp;
+    this.enemyAtk        = this.enemyDefData.atk;
+    this.enemyDef        = this.enemyDefData.def;
+    this.enemyCurrentHp  = this.enemyDefData.hp;
     
     // UI에 보여질 이름: 보스는 전달받은 mobName 사용, 일반은 enemyData에서
     if (!this.data_.isBoss) {
-      this.data_.mobName = i18n.t(enemyDefData.nameKey) || enemyDefData.nameKey;
+      this.data_.mobName = i18n.t(this.enemyDefData.nameKey) || this.enemyDefData.nameKey;
     }
 
     // 덱 초기화 (첫 드로우 전 drawPile 채움)
@@ -272,7 +273,8 @@ export default class BattleScene extends Phaser.Scene {
     }).setOrigin(0.5);
 
     // ── 적 ───────────────────────────────────────────────────────────────────
-    const elemColor = ELEM_COLORS[this.data_.mapElement] ?? 0xff6666;
+    const actualElem = this.enemyDefData.element;
+    const elemColor = ELEM_COLORS[actualElem] ?? 0xcccccc;
     this.enemyContainer = this.add.container(enemyX, charY);
 
     // 적 몸체 (컬러 사각형 + "idle 숨쉬기" 트위너)
@@ -280,11 +282,13 @@ export default class BattleScene extends Phaser.Scene {
     this.enemyBody.setStrokeStyle(3, elemColor, 0.9);
     this.enemyContainer.add(this.enemyBody);
 
-    // 속성 아이콘
-    const attrIdx  = ELEMENT_ATTR_INDEX[this.data_.mapElement] ?? 5;
-    const attrIcon = this.add.image(0, -60 * this.uiScale, 'attr_icons', `attr_${attrIdx}`);
-    attrIcon.setDisplaySize(56 * this.uiScale, 56 * this.uiScale);
-    this.enemyContainer.add(attrIcon);
+    // 속성 아이콘 (무속성이 아닐 때만 표시)
+    if (actualElem !== 'normal') {
+      const attrIdx  = ELEMENT_ATTR_INDEX[actualElem] ?? 5;
+      const attrIcon = this.add.image(0, -60 * this.uiScale, 'attr_icons', `attr_${attrIdx}`);
+      attrIcon.setDisplaySize(56 * this.uiScale, 56 * this.uiScale);
+      this.enemyContainer.add(attrIcon);
+    }
 
     // 적 이름
     const enemyNameTxt = this.add.text(0, 90 * this.uiScale, this.data_.mobName, {
@@ -834,7 +838,8 @@ export default class BattleScene extends Phaser.Scene {
           const critTxt = isCrit ? ' ★CRIT!' : '';
           const comboTxt = bonusDmg > 0 ? ' (추가 데미지!)' : '';
           this.statusText.setText(`${this.data_.mobName}에게 ${Math.floor(finalDmg)}${critTxt}${comboTxt}`).setColor('#2ecc71');
-          resolve();
+          
+          this.time.delayedCall(isFastForward ? 150 : 350, () => resolve());
         }, isFastForward);
 
       } else {
@@ -850,7 +855,7 @@ export default class BattleScene extends Phaser.Scene {
           this.updatePlayerHpBar();
           this.statusText.setText(`HP ${Math.floor(heal)} 회복!`).setColor('#2ecc71');
         }
-        this.time.delayedCall(isFastForward ? 100 : 350, () => resolve());
+        this.time.delayedCall(isFastForward ? 250 : 550, () => resolve());
       }
     });
   }
@@ -889,7 +894,7 @@ export default class BattleScene extends Phaser.Scene {
         
         const critTxt = isCrit ? ' ★CRIT!' : '';
         this.statusText.setText(`마무리 타격! ${this.data_.mobName}에게 ${Math.floor(finalDmg)}${critTxt}`).setColor('#2ecc71');
-        resolve();
+        this.time.delayedCall(isFastForward ? 200 : 450, () => resolve());
       }, isFastForward);
     });
   }
@@ -932,10 +937,9 @@ export default class BattleScene extends Phaser.Scene {
         this.tweens.add({
           targets:  this.playerSprite,
           x:        startX,
-          duration: dashDur + 50,
+          duration: dashDur + 100, // 돌아오는 모션 소폭 감속
           ease:     'Power2.easeOut',
           onComplete: () => {
-            this.isAnimating = false;
             onComplete();
           },
         });
@@ -1117,7 +1121,7 @@ export default class BattleScene extends Phaser.Scene {
       y: y - (isCrit ? 80 : 50),
       alpha: 0,
       scale: isCrit ? 1.5 : 1,
-      duration: isCrit ? 1000 : 800,
+      duration: isCrit ? 1400 : 1100, // 더 오래 표시되도록 증가
       ease: 'Power2.easeOut',
       onComplete: () => txt.destroy()
     });
@@ -1184,26 +1188,69 @@ export default class BattleScene extends Phaser.Scene {
     this.statusText.setText(resultText).setColor(resultColor);
     this.attackBtn.setVisible(false);
 
-    // 결과 오버레이
+    // 결과 오버레이 및 팝업
     const overlay = this.add.graphics();
-    overlay.fillStyle(0x000000, 0);
+    overlay.fillStyle(0x000000, 0.7);
     overlay.fillRect(0, 0, this.W, this.H);
+    overlay.setDepth(100);
 
+    const resultCont = this.add.container(this.W / 2, this.H / 2).setDepth(101);
+    
+    // 배경 박스
+    const boxW = 320;
+    const boxH = 220;
+    const box = this.add.graphics();
+    box.fillStyle(0x1a1a2a, 0.95);
+    box.lineStyle(2, playerWon ? 0x2ecc71 : 0xe74c3c, 1);
+    box.fillRoundedRect(-boxW/2, -boxH/2, boxW, boxH, 12);
+    box.strokeRoundedRect(-boxW/2, -boxH/2, boxW, boxH, 12);
+    
+    // 타이틀
+    const titleTxt = this.add.text(0, -60, playerWon ? 'VICTORY' : 'DEFEAT', {
+      fontFamily: FONT_B, fontSize: '36px', color: resultColor
+    }).setOrigin(0.5);
+    
+    // 상세 메시지
+    const detailTxt = this.add.text(0, -10, resultText, {
+      fontFamily: FONT_M, fontSize: '16px', color: '#ffffff', align: 'center'
+    }).setOrigin(0.5);
+    
+    // 확인 버튼
+    const btnW = 140;
+    const btnH = 45;
+    const btnCont = this.add.container(0, 70);
+    const btnBg = this.add.graphics();
+    btnBg.fillStyle(playerWon ? 0x27ae60 : 0xc0392b, 1);
+    btnBg.fillRoundedRect(-btnW/2, -btnH/2, btnW, btnH, 8);
+    const btnTxt = this.add.text(0, 0, i18n.t('confirm') || '확인', {
+      fontFamily: FONT_B, fontSize: '18px', color: '#ffffff'
+    }).setOrigin(0.5);
+    btnCont.add([btnBg, btnTxt]);
+    
+    btnCont.setInteractive(new Phaser.Geom.Rectangle(-btnW/2, -btnH/2, btnW, btnH), Phaser.Geom.Rectangle.Contains);
+    btnCont.on('pointerdown', () => {
+      const hpDelta = this.playerCurrentHp - this.data_.playerHp;
+      this.game.events.emit('nodeEventComplete', {
+        battleResult: playerWon ? 'win' : 'lose',
+        hpDelta,
+        nodeId:       this.data_.nodeId,
+      });
+      this.scene.stop('NodeEventScene');
+      this.scene.stop();
+      this.scene.resume('MainScene');
+    });
+
+    resultCont.add([box, titleTxt, detailTxt, btnCont]);
+    
+    // 등장 애니메이션
+    resultCont.setScale(0.8);
+    resultCont.setAlpha(0);
     this.tweens.add({
-      targets:  overlay,
-      alpha:    { from: 0, to: 0.6 },
-      duration: 600,
-      onComplete: () => {
-        const hpDelta = this.playerCurrentHp - this.data_.playerHp; // 항상 실제 HP 변화량 전달
-        this.game.events.emit('nodeEventComplete', {
-          battleResult: playerWon ? 'win' : 'lose',
-          hpDelta,
-          nodeId:       this.data_.nodeId,
-        });
-        this.scene.stop('NodeEventScene');
-        this.scene.stop();
-        this.scene.resume('MainScene');
-      },
+      targets: resultCont,
+      scale: 1,
+      alpha: 1,
+      duration: 300,
+      ease: 'Back.easeOut'
     });
   }
 }
