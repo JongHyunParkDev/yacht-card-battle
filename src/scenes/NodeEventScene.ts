@@ -231,7 +231,6 @@ export default class NodeEventScene extends Phaser.Scene {
   private scrollMask: Phaser.Display.Masks.GeometryMask | null = null;
   private isDragging = false;
   private startX = 0;
-  private scrollX = 0; 
   private maxScrollX = 0;
 
   private elementName(el: string): string {
@@ -359,7 +358,7 @@ export default class NodeEventScene extends Phaser.Scene {
     const { playerEquipment, maxEquipSlots } = this.data_;
     const isFull = playerEquipment.length >= maxEquipSlots;
 
-    // 이미 보유한 장비 제외 후 가중치 랜덤으로 3개 추출
+    // 이미 보유한 장비 제외 후 가중치 랜덤 3개 추출
     const drawn = drawEquipment(3, playerEquipment);
 
     const slotText = i18n.f('treasureSlot', { cur: playerEquipment.length, max: maxEquipSlots });
@@ -368,136 +367,216 @@ export default class NodeEventScene extends Phaser.Scene {
       fontFamily: FONT_M, fontSize: '16px',
       color: isFull ? '#e74c3c' : '#aaaaaa',
     }).setOrigin(0.5);
-    const desc = this.makeBody(
-      isFull ? i18n.t('treasureDescFull') : i18n.t('treasureDescNormal'),
-      -H * 0.22,
-    );
-    const divider = this.makeDivider(-H * 0.15);
+    const hintTxt = this.add.text(0, -H * 0.235,
+      '아이콘에 마우스를 올리면 상세 정보를 볼 수 있습니다', {
+        fontFamily: FONT_L, fontSize: '12px', color: '#666688',
+      }).setOrigin(0.5);
+    const divider = this.makeDivider(-H * 0.19);
 
-    /** 장비 선택 결과 빌드: 스탯 델타 포함 */
+    /** 장비 선택 결과 빌드 */
     const buildResult = (equip: EquipmentData) => {
       const r: Record<string, unknown> = { equipment: equip.id };
       const s = equip.stats;
-      if (s.atk)       r.atkDelta    = s.atk;
-      if (s.def)       r.defDelta    = s.def;
-      if (s.crit)      r.critDelta   = s.crit;
-      if (s.critDmg)   r.critDmgDelta = s.critDmg;
-      if (s.maxHp)     r.maxHpDelta  = s.maxHp;
-      if (s.cardMult)  r.cardValueMultiplier = s.cardMult;
-      if (s.shieldMult) r.shieldMultiplier   = s.shieldMult;
+      if (s.atk)        r.atkDelta            = s.atk;
+      if (s.def)        r.defDelta            = s.def;
+      if (s.crit)       r.critDelta           = s.crit;
+      if (s.critDmg)    r.critDmgDelta        = s.critDmg;
+      if (s.maxHp)      r.maxHpDelta          = s.maxHp;
+      if (s.cardMult)   r.cardValueMultiplier = s.cardMult;
+      if (s.shieldMult) r.shieldMultiplier    = s.shieldMult;
       return r;
     };
 
-    /** 장비 버튼 라벨: [등급] 이름 | 스탯 요약 */
-    const makeLabel = (equip: EquipmentData) => {
-      const gradeLabel = EQUIP_GRADE_LABEL[equip.grade];
-      const stats      = formatEquipStats(equip.stats);
-      const special    = equip.special ? `  ★ ${equip.special.desc}` : '';
-      return `[${gradeLabel}]  ${equip.name}\n${stats}${special}`;
-    };
-
-    /** 장비 버튼 색상 (등급별) */
-    const GRADE_BG: Record<string, number> = {
-      common: 0x2a2a2a, uncommon: 0x0d2a3a, rare: 0x2a0a3a,
-      unique: 0x3a2800, legendary: 0x3a0a00,
-    };
-
-    // 장비 선택 → 슬롯 가득 차면 교체 화면으로 전환
+    /** 장비 선택 → 슬롯이 비었으면 획득, 가득 찼으면 교체 화면 */
     const pickEquip = (equip: EquipmentData) => {
       const result = buildResult(equip);
       if (!isFull) {
-        // 슬롯이 비어 있으면: 결과화면 보여주고 닫기
         this.tweens.add({
           targets: this.root, alpha: 0, duration: 180,
           onComplete: () => {
             this.root.removeAll(true);
             this.root.setAlpha(1);
-            const resTitle = this.makeHeader('row0_3', '장비 획득!', -H * 0.37);
+            const resTitle   = this.makeHeader('row0_3', '장비 획득!', -H * 0.37);
             const gradeColor = EQUIP_GRADE_COLOR[equip.grade];
-            const nameText = this.add.text(0, -H * 0.22, equip.name, {
-              fontFamily: FONT_B, fontSize: '28px', color: gradeColor
+            const nameText   = this.add.text(0, -H * 0.22, equip.name, {
+              fontFamily: FONT_B, fontSize: '28px', color: gradeColor,
             }).setOrigin(0.5);
-            const statsText = this.add.text(0, -H * 0.12, formatEquipStats(equip.stats), {
-              fontFamily: FONT_M, fontSize: '18px', color: '#cccccc', align: 'center'
+            const statsText  = this.add.text(0, -H * 0.12, formatEquipStats(equip.stats), {
+              fontFamily: FONT_M, fontSize: '18px', color: '#cccccc', align: 'center',
             }).setOrigin(0.5);
             const specialText = equip.special
               ? this.add.text(0, -H * 0.02, `★ ${equip.special.desc}`, {
-                  fontFamily: FONT_M, fontSize: '16px', color: '#f5cc4a'
+                  fontFamily: FONT_M, fontSize: '16px', color: '#f5cc4a',
                 }).setOrigin(0.5)
               : null;
-            const confirmBtn = this.makeButton(0, H * 0.25, i18n.t('confirm') || '확인', 0x3a2800, () => {
-              this.closeEvent(result);
-            }, Math.round(W * 0.28), 56);
-            const items = [resTitle, nameText, statsText, confirmBtn];
+            const confirmBtn = this.makeButton(
+              0, H * 0.25, i18n.t('confirm') || '확인', 0x3a2800,
+              () => this.closeEvent(result),
+              Math.round(W * 0.28), 56,
+            );
+            const items: Phaser.GameObjects.GameObject[] = [resTitle, nameText, statsText, confirmBtn];
             if (specialText) items.splice(3, 0, specialText);
             this.root.add(items);
-          }
+          },
         });
         return;
       }
-      // 교체 화면 (fade → 체 혜드 없이 이미 필수 교체)
+      // 슬롯 가득 찬 경우 → 교체 화면
       this.tweens.add({
         targets: this.root, alpha: 0, duration: 180,
         onComplete: () => {
           this.root.removeAll(true);
           this.root.setAlpha(1);
-
           const replaceTitle = this.makeTitle(i18n.t('treasureReplaceTitle'), -H * 0.32);
           const newLbl = this.add.text(0, -H * 0.23, `${i18n.t('newEquip')}: ${equip.name}`, {
             fontFamily: FONT_M, fontSize: '16px', color: EQUIP_GRADE_COLOR[equip.grade],
           }).setOrigin(0.5);
           const div2 = this.makeDivider(-H * 0.17);
-
           const replaceBtns = playerEquipment.map((eqId, idx) => {
             const owned = getEquipmentById(eqId);
             const lbl   = owned ? `${owned.name}  [${EQUIP_GRADE_LABEL[owned.grade]}]` : eqId;
             return this.makeButton(0, -H * 0.09 + idx * (H * 0.13), lbl, 0x5c1a1a, () => {
-              // 교체 선택 후에도 결과 화면 보여주기
               this.tweens.add({
                 targets: this.root, alpha: 0, duration: 180,
                 onComplete: () => {
                   this.root.removeAll(true);
                   this.root.setAlpha(1);
-                  const resTitle = this.makeHeader('row0_3', '장비 교체 완료!', -H * 0.37);
-                  const resText  = this.add.text(0, -H * 0.15, `${owned?.name ?? eqId}\n→\n${equip.name}`, {
-                    fontFamily: FONT_M, fontSize: '20px', color: '#cccccc', align: 'center'
-                  }).setOrigin(0.5);
-                  const confirmBtn = this.makeButton(0, H * 0.25, i18n.t('confirm') || '확인', 0x5c1a1a, () => {
-                    this.closeEvent({ ...result, replaceEquipment: eqId });
-                  }, Math.round(W * 0.28), 56);
-                  this.root.add([resTitle, resText, confirmBtn]);
-                }
+                  const resTitle2   = this.makeHeader('row0_3', '장비 교체 완료!', -H * 0.37);
+                  const resText     = this.add.text(0, -H * 0.15,
+                    `${owned?.name ?? eqId}\n→\n${equip.name}`, {
+                      fontFamily: FONT_M, fontSize: '20px', color: '#cccccc', align: 'center',
+                    }).setOrigin(0.5);
+                  const confirmBtn2 = this.makeButton(
+                    0, H * 0.25, i18n.t('confirm') || '확인', 0x5c1a1a,
+                    () => this.closeEvent({ ...result, replaceEquipment: eqId }),
+                    Math.round(W * 0.28), 56,
+                  );
+                  this.root.add([resTitle2, resText, confirmBtn2]);
+                },
               });
             }, Math.round(W * 0.46), 56);
           });
-
           this.root.add([replaceTitle, newLbl, div2, ...replaceBtns]);
-        }
+        },
       });
     };
 
-    const btns = drawn.map((equip, i) =>
-      this.makeButton(
-        0, -H * 0.05 + i * (H * 0.135),
-        makeLabel(equip),
-        GRADE_BG[equip.grade] ?? 0x2a2a2a,
-        () => pickEquip(equip),
-        Math.round(W * 0.60), 60,
-      ),
+    // ── 아이콘 카드 배치 ──────────────────────────────────────────────────────
+    const CARD_SIZE = Math.min(Math.round(W * 0.18), 130);
+    const CARD_GAP  = Math.round(W * 0.04);
+    const totalW    = drawn.length * CARD_SIZE + (drawn.length - 1) * CARD_GAP;
+    const cardStartX = -totalW / 2;
+    const cardY      = -H * 0.04;
+
+    // 공유 툴팁 (최상단 depth)
+    const tooltipCont = this.add.container(0, 0).setDepth(3000).setVisible(false);
+    const tooltipBg   = this.add.graphics();
+    const tooltipText = this.add.text(12, 10, '', {
+      fontFamily: FONT_M, fontSize: '14px', color: '#eeeeee', lineSpacing: 5,
+      wordWrap: { width: 260 },
+    });
+    tooltipCont.add([tooltipBg, tooltipText]);
+    this.root.add(tooltipCont);
+
+    const showTooltip = (equip: EquipmentData, anchorX: number, anchorY: number) => {
+      const gradeColor = EQUIP_GRADE_COLOR[equip.grade];
+      const gradeLabel = EQUIP_GRADE_LABEL[equip.grade];
+      let txt = `[${gradeLabel}] ${equip.name}\n`;
+      txt += `─────────────────\n`;
+      txt += formatEquipStats(equip.stats);
+      if (equip.special) txt += `\n★ ${equip.special.desc}`;
+
+      tooltipText.setText(txt);
+      tooltipCont.setVisible(true);
+
+      const b  = tooltipText.getBounds();
+      const tw = b.width + 24;
+      const th = b.height + 20;
+      tooltipBg.clear();
+      tooltipBg.fillStyle(0x0a0a14, 0.96);
+      tooltipBg.lineStyle(2, parseInt(gradeColor.replace('#', '0x')), 1);
+      tooltipBg.fillRoundedRect(0, 0, tw, th, 7);
+      tooltipBg.strokeRoundedRect(0, 0, tw, th, 7);
+
+      let tx = anchorX - tw / 2;
+      let ty = anchorY - CARD_SIZE / 2 - th - 12;
+      if (ty < -H / 2 + 10) ty = anchorY + CARD_SIZE / 2 + 12;
+      tooltipCont.setPosition(tx, ty);
+    };
+
+    const iconCards = drawn.map((equip, i) => {
+      const cx = cardStartX + i * (CARD_SIZE + CARD_GAP) + CARD_SIZE / 2;
+      const cy = cardY;
+      const gradeHex = parseInt(EQUIP_GRADE_COLOR[equip.grade].replace('#', '0x'));
+
+      const cont = this.add.container(cx, cy);
+
+      const bg = this.add.graphics();
+      bg.fillStyle(0x10101e, 0.95);
+      bg.lineStyle(2.5, gradeHex, 1);
+      bg.fillRoundedRect(-CARD_SIZE / 2, -CARD_SIZE / 2, CARD_SIZE, CARD_SIZE, 10);
+      bg.strokeRoundedRect(-CARD_SIZE / 2, -CARD_SIZE / 2, CARD_SIZE, CARD_SIZE, 10);
+
+      const iconSize = Math.round(CARD_SIZE * 0.62);
+      const sprite   = this.add.sprite(0, -8, equip.texture, equip.frame);
+      sprite.setDisplaySize(iconSize, iconSize);
+
+      const nameLbl = this.add.text(0, CARD_SIZE / 2 - 22, equip.name, {
+        fontFamily: FONT_M, fontSize: '11px',
+        color: EQUIP_GRADE_COLOR[equip.grade],
+        align: 'center', wordWrap: { width: CARD_SIZE - 8 },
+      }).setOrigin(0.5, 0);
+
+      const gradeLbl = this.add.text(0, -CARD_SIZE / 2 + 6, EQUIP_GRADE_LABEL[equip.grade], {
+        fontFamily: FONT_B, fontSize: '10px',
+        color: EQUIP_GRADE_COLOR[equip.grade],
+      }).setOrigin(0.5, 0);
+
+      cont.add([bg, sprite, gradeLbl, nameLbl]);
+      cont.setSize(CARD_SIZE, CARD_SIZE);
+      cont.setInteractive({ useHandCursor: true });
+
+      const drawBg = (hover: boolean) => {
+        bg.clear();
+        bg.fillStyle(hover ? 0x1a1a30 : 0x10101e, hover ? 0.98 : 0.95);
+        bg.lineStyle(hover ? 3 : 2.5, gradeHex, 1);
+        bg.fillRoundedRect(-CARD_SIZE / 2, -CARD_SIZE / 2, CARD_SIZE, CARD_SIZE, 10);
+        bg.strokeRoundedRect(-CARD_SIZE / 2, -CARD_SIZE / 2, CARD_SIZE, CARD_SIZE, 10);
+      };
+
+      cont.on('pointerover', () => {
+        drawBg(true);
+        this.tweens.add({ targets: cont, scaleX: 1.06, scaleY: 1.06, duration: 100 });
+        showTooltip(equip, cx, cy);
+      });
+      cont.on('pointerout', () => {
+        drawBg(false);
+        this.tweens.add({ targets: cont, scaleX: 1, scaleY: 1, duration: 100 });
+        tooltipCont.setVisible(false);
+      });
+      cont.on('pointerdown', () => pickEquip(equip));
+
+      return cont;
+    });
+
+    const skipBtn = this.makeButton(
+      0, H * 0.36,
+      i18n.t('skip') || '건너뛰기',
+      0x222232,
+      () => this.closeEvent({}),
+      Math.round(W * 0.22), 44,
     );
 
-    // 장비가 모두 소진된 경우
     if (drawn.length === 0) {
       const noEquip = this.makeBody(i18n.t('noNewEquip'), H * 0.02);
-      const skipBtn = this.makeButton(0, H * 0.22, i18n.t('confirm'), 0x333333, () => {
-        this.closeEvent({});
-      }, Math.round(W * 0.22), 48);
       this.root.add([title, slotLbl, divider, noEquip, skipBtn]);
       return;
     }
 
-    this.root.add([title, slotLbl, desc, divider, ...btns]);
+    this.root.add([title, slotLbl, hintTxt, divider, ...iconCards, skipBtn]);
   }
+
+
 
   // ─────────────────────────────────────────────────────────────────────────────
   // 5 — 카드 뒤집기 골드 게임
@@ -667,80 +746,72 @@ export default class NodeEventScene extends Phaser.Scene {
     const H = this.H;
     const W = this.W;
     const ELEMENTS: CardElement[] = ['water', 'fire', 'grass', 'lightning', 'earth'];
-    const ATTR_IDX: Record<string, number> = { water:0, fire:1, grass:2, lightning:3, earth:4 };
-    const title   = this.makeHeader('row1_0', i18n.t('swapTitle'), -H * 0.35);
-    const desc    = this.makeBody(i18n.t('swapDesc'), -H * 0.24);
-    const divider = this.makeDivider(-H * 0.16);
+    const ELEM_OFFSET: Record<string, number> = { water:0, fire:5, grass:10, lightning:15, earth:20 };
 
-    const BTN_SIZE = Math.round(W * 0.10);
-    const GAP    = W * 0.12;
-    const startX = -(ELEMENTS.length - 1) * GAP / 2;
+    const title   = this.makeHeader('row1_0', i18n.t('swapTitle'), -H * 0.38);
+    const desc    = this.makeBody('교환할 카드 1장을 선택하세요.\n선택한 카드가 랜덤 속성으로 바뀝니다.', -H * 0.29);
+    const divider = this.makeDivider(-H * 0.21);
+    this.root.add([title, desc, divider]);
 
-    // 속성 버튼: 아이콘 이미지 + 이름 텍스트, makeButton 대신 직접 컨테이너 구성
-    const elBtns = ELEMENTS.map((el, i) => {
-      const bx = startX + i * GAP;
-      const by = H * 0.04;
-      const cont = this.add.container(bx, by);
-      const bg = this.add.graphics();
-      bg.fillStyle(0x1a2a4a, 1);
-      bg.lineStyle(1, COLOR_GOLD, 0.5);
-      bg.fillRoundedRect(-BTN_SIZE / 2, -BTN_SIZE * 0.65, BTN_SIZE, BTN_SIZE * 1.3, 8);
-      bg.strokeRoundedRect(-BTN_SIZE / 2, -BTN_SIZE * 0.65, BTN_SIZE, BTN_SIZE * 1.3, 8);
-      const icon = this.add.image(0, -BTN_SIZE * 0.12, 'attr_icons', `attr_${ATTR_IDX[el]}`);
-      icon.setDisplaySize(BTN_SIZE * 0.55, BTN_SIZE * 0.55);
-      const lbl = this.add.text(0, BTN_SIZE * 0.38, this.elementName(el), {
-        fontFamily: FONT_M, fontSize: '14px', color: '#cccccc',
-      }).setOrigin(0.5);
-      cont.add([bg, icon, lbl]);
-      cont.setInteractive(
-        new Phaser.Geom.Rectangle(-BTN_SIZE / 2, -BTN_SIZE * 0.65, BTN_SIZE, BTN_SIZE * 1.3),
-        Phaser.Geom.Rectangle.Contains,
-      );
-      cont.on('pointerover', () => bg.setAlpha(1.3));
-      cont.on('pointerout',  () => bg.setAlpha(1));
-      cont.on('pointerdown', () => {
-        const others = ELEMENTS.filter(e => e !== el);
-        const to = others[Math.floor(Math.random() * others.length)];
-        
-        // 결과 화면 표시
-        this.root.removeAll(true);
-        const resultTitle = this.makeHeader('row1_0', i18n.t('swapResultTitle') || '교환 결과', -H * 0.35);
-        const resultDiv = this.makeDivider(-H * 0.25);
-        
-        const resultTxt = this.add.text(0, -H * 0.15, 
-          `보유 중인 모든 [${this.elementName(el)}] 속성 카드가\n[${this.elementName(to)}] 속성 카드로 교환되었습니다!`, {
-          fontFamily: FONT_B, fontSize: '24px', color: '#f39c12', align: 'center'
-        }).setOrigin(0.5);
-
-        const group = [resultTitle, resultDiv, resultTxt];
-
-        // 시각적으로 카드 보여주기
-        const fromCardData = CARD_DATA_LIST.find(c => c.element === el && c.stars === 3);
-        const toCardData = CARD_DATA_LIST.find(c => c.element === to && c.stars === 3);
-        if (fromCardData && toCardData) {
-          const cardScale = 0.82;
-          const sw = CARD_WIDTH * cardScale;
-          const sh = CARD_HEIGHT * cardScale;
-          const gapX = Math.floor(W * 0.22);
-          
-          // 카드는 Y축 위로 좀더 올림 (-H * 0.05)
-          const fromCard = new Card(this, -gapX - sw/2, -H * 0.02 - sh/2, fromCardData).setScale(cardScale);
-          const toCard   = new Card(this,  gapX - sw/2, -H * 0.02 - sh/2, toCardData).setScale(cardScale);
-          const arrowTx  = this.add.text(0, -H * 0.02, '▶', { fontFamily: FONT_B, fontSize: '40px', color: '#ffffff' }).setOrigin(0.5);
-          group.push(fromCard, toCard, arrowTx);
-        }
-        
-        const confirmBtn = this.makeButton(0, H * 0.35, i18n.t('confirm') || '확인', 0x27ae60, () => {
-          this.closeEvent({ swapFrom: el, swapTo: to });
-        }, Math.round(W * 0.3), 60);
-        
-        group.push(confirmBtn);
-        this.root.add(group);
-      });
-      return cont;
+    // 속성 카드만 필터링 (일반 카드 제외)
+    const elementalCards = this.data_.deck.filter(e => {
+      const cd = CARD_DATA_LIST.find(c => c.id === e.cardId);
+      return cd && cd.element !== 'normal';
     });
 
-    this.root.add([title, desc, divider, ...elBtns]);
+    if (elementalCards.length === 0) {
+      const noneTxt = this.makeBody('교환할 수 있는 속성 카드가 없습니다.', H * 0.02);
+      const backBtn = this.makeButton(0, H * 0.22, i18n.t('confirm') || '확인', 0x333333, () => {
+        this.closeEvent({});
+      }, Math.round(W * 0.22), 50);
+      this.root.add([noneTxt, backBtn]);
+      return;
+    }
+
+    // 카드 그리드 표시 (multGain=1.0 → 라벨 없음)
+    this.createScrollableCardGrid(elementalCards, 1.0, (entry, cardData) => {
+      // 현재 속성을 제외한 랜덤 속성 선택
+      const others  = ELEMENTS.filter(e => e !== cardData.element);
+      const toElem  = others[Math.floor(Math.random() * others.length)] as CardElement;
+      const off     = ELEM_OFFSET[toElem];
+      const toCard  = off != null ? CARD_DATA_LIST[off + cardData.stars - 1] : null;
+
+      this.tweens.add({
+        targets: this.root, alpha: 0, duration: 180,
+        onComplete: () => {
+          this.root.removeAll(true);
+          this.root.setAlpha(1);
+
+          const resTitle = this.makeHeader('row1_0', i18n.t('swapResultTitle') || '교환 결과', -H * 0.38);
+          const resTxt   = this.add.text(0, -H * 0.26,
+            `[${i18n.t(cardData.nameKey)}] 카드가\n[${this.elementName(toElem)}] 속성으로 교환되었습니다!`, {
+            fontFamily: FONT_B, fontSize: '22px', color: '#f39c12', align: 'center',
+          }).setOrigin(0.5);
+
+          const group: Phaser.GameObjects.GameObject[] = [resTitle, resTxt];
+
+          // 교환 전/후 카드 시각화
+          if (toCard) {
+            const SC  = 0.90;
+            const sw  = CARD_WIDTH  * SC;
+            const sh  = CARD_HEIGHT * SC;
+            const gx  = Math.floor(W * 0.22);
+            const fromCard = new Card(this, -gx - sw / 2, -H * 0.08 - sh / 2, cardData).setScale(SC);
+            const toCardObj= new Card(this,  gx - sw / 2, -H * 0.08 - sh / 2, toCard).setScale(SC);
+            const arrow    = this.add.text(0, -H * 0.08, '▶', {
+              fontFamily: FONT_B, fontSize: '40px', color: '#ffffff',
+            }).setOrigin(0.5);
+            group.push(fromCard, arrow, toCardObj);
+          }
+
+          const confirmBtn = this.makeButton(0, H * 0.34, i18n.t('confirm') || '확인', 0x27ae60, () => {
+            this.closeEvent({ swapCardId: entry.cardId, swapTo: toElem });
+          }, Math.round(W * 0.3), 60);
+          group.push(confirmBtn);
+          this.root.add(group);
+        },
+      });
+    }, '#f39c12');
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -761,7 +832,7 @@ export default class NodeEventScene extends Phaser.Scene {
       fontFamily: FONT_M, fontSize: '16px', color: '#e74c3c',
     }).setOrigin(0.5);
 
-    const acceptBtn = this.makeButton(W * 0.15, H * 0.3, '생명력 바치기 (-5 HP)', 0x8b0000, () => {
+    const acceptBtn = this.makeButton(0, H * 0.25, '생명력 바치기 (-5 HP)', 0x8b0000, () => {
       this.tweens.add({
         targets: this.root, alpha: 0, duration: 200,
         onComplete: () => {
@@ -801,7 +872,7 @@ export default class NodeEventScene extends Phaser.Scene {
       });
     }, Math.round(W * 0.32), 54);
 
-    const refuseBtn = this.makeButton(W * 0.13, H * 0.28, i18n.t('heartRefuse'), 0x5c1a1a, () => {
+    const refuseBtn = this.makeButton(0, H * 0.37, i18n.t('heartRefuse'), 0x5c1a1a, () => {
       this.tweens.add({
         targets: this.root, alpha: 0, duration: 180,
         onComplete: () => {
@@ -846,7 +917,7 @@ export default class NodeEventScene extends Phaser.Scene {
     const deckList = this.data_.deck;
     const shieldCards = deckList.filter(e => {
       const cd = CARD_DATA_LIST.find(c => c.id === e.cardId);
-      return cd && (cd.key === 'defense' || cd.key === 'shield');
+      return cd && (cd.key === 'defense' || cd.key === 'shield' || cd.effects?.some(eff => eff.type === 'shield_add'));
     });
 
     if (shieldCards.length === 0) {
@@ -1020,8 +1091,17 @@ export default class NodeEventScene extends Phaser.Scene {
 
   private readonly ELEM_OFFSET: Record<string, number> = { water:0, fire:5, grass:10, lightning:15, earth:20 };
 
-  /** 
-   * 스크롤 가능한 카드 그리드를 생성하는 헬퍼 메서드 (가로 드래그 버전)
+  /**
+   * 스크롤 가능한 카드 그리드 (가로 1행, 씬 레벨 드래그)
+   *
+   * ─ 구조 변경 이유 ─
+   * 기존: bgZone을 listCont 위에 추가 → bgZone이 Z-order상 최상위가 되어
+   *        카드 위에 올라가 모든 포인터 이벤트를 가로챔 → 카드 클릭 불가.
+   * 현재: bgZone 제거, 씬(scene.input) 레벨에서 드래그를 감지.
+   *        카드는 직접 setInteractive 후 pointerup으로 클릭을 처리.
+   *
+   * ─ 2행 레이아웃 제거 이유 ─
+   * 2행 시 카드가 마스크 밖으로 넘어가 잘리는 문제 → 1행 가로 스크롤로 통일.
    */
   private createScrollableCardGrid(
     list: { cardId: number; count: number; mult?: number }[],
@@ -1031,134 +1111,144 @@ export default class NodeEventScene extends Phaser.Scene {
     isStar = false
   ) {
     const { width: W, height: H } = this.scale;
-    
-    // 1단계: 덱 리스트 펼치기 (개별 카드로 표시)
+
+    // 개별 카드로 펼치기
     const flatList: any[] = [];
     list.forEach(e => {
       for (let i = 0; i < (e.count || 1); i++) {
-        flatList.push({ ...e, count: 1 }); // 개별 인스턴스처럼 취급
+        flatList.push({ ...e, count: 1 });
       }
     });
 
-    const CARD_SC = 0.75;
-    const scaledW = CARD_WIDTH  * CARD_SC;
-    const scaledH = CARD_HEIGHT * CARD_SC;
-    const gapX    = 24;
-    const gapY    = 24;
+    const CARD_SC = 0.68;                    // 카드 스케일 (1행에 더 많이 보이도록)
+    const scaledW = CARD_WIDTH  * CARD_SC;   // ≈ 122
+    const scaledH = CARD_HEIGHT * CARD_SC;   // ≈ 171
+    const gapX    = 18;
+    const LABEL_H = 18;                      // 라벨 공간
+    const GRID_Y  = H * 0.07;               // 제목 영역 아래로 내림
 
-    // 마스크 영역 정의 (가로로 길게)
+    // 마스크: 1행 카드 + 라벨이 정확히 들어오는 높이
     const maskW = W * 0.92;
-    const maskH = H * 0.50;
+    const maskH = scaledH + LABEL_H + 16;
     const maskX = W / 2 - maskW / 2;
-    const maskY = H / 2 - maskH / 2;
+    const maskY = H / 2 + GRID_Y - maskH / 2;
 
     const shape = this.make.graphics({});
     shape.fillStyle(0xffffff);
     shape.fillRect(maskX, maskY, maskW, maskH);
     const mask = shape.createGeometryMask();
 
-    const listCont = this.add.container(0, 0);
-    this.root.add(listCont);
+    const listCont = this.add.container(0, GRID_Y);
     listCont.setMask(mask);
+    this.root.add(listCont);
 
-    // 가로 레이아웃 (최대 2행)
-    const rows = flatList.length > 5 ? 2 : 1;
-    const itemsPerRow = Math.ceil(flatList.length / rows);
-    const gridW = itemsPerRow * (scaledW + gapX);
-    this.maxScrollX = Math.max(0, gridW - maskW + 60);
+    // 전체 그리드 너비 계산 → 스크롤 한계
+    const totalGridW = flatList.length * (scaledW + gapX) - gapX;
+    this.maxScrollX = Math.max(0, totalGridW - maskW + 40);
 
     flatList.forEach((entry, i) => {
       const cardData = CARD_DATA_LIST.find(c => c.id === entry.cardId);
       if (!cardData) return;
       const currentMult = entry.mult ?? 1.0;
       const nextMult    = parseFloat((currentMult * multGain).toFixed(2));
-      
-      const col = i % itemsPerRow;
-      const row = Math.floor(i / itemsPerRow);
-      const cx  = col * (scaledW + gapX) - (maskW / 2) + scaledW / 2 + 30;
-      const cy  = (rows > 1) ? (row === 0 ? -scaledH/2 - 10 : scaledH/2 + 10) : 0;
+
+      // cx = 카드 중심 X (listCont 기준)
+      const cx = i * (scaledW + gapX) - maskW / 2 + scaledW / 2 + 20;
+      const cy = LABEL_H / 2;  // 라벨 공간만큼 아래로
 
       const isElemental = cardData.element !== 'normal';
       const isMaxed      = cardData.stars >= 5;
       const canUpgrade   = isStar ? (isElemental && !isMaxed) : true;
 
-      const card = new Card(this, cx - scaledW/2, cy - scaledH/2, cardData);
+      const card = new Card(this, cx - scaledW / 2, cy - scaledH / 2, cardData);
       card.setScale(CARD_SC);
-      
+
       if (canUpgrade) {
-        card.setInteractive(new Phaser.Geom.Rectangle(0, 0, CARD_WIDTH, CARD_HEIGHT), Phaser.Geom.Rectangle.Contains);
+        card.setInteractive(
+          new Phaser.Geom.Rectangle(0, 0, CARD_WIDTH, CARD_HEIGHT),
+          Phaser.Geom.Rectangle.Contains,
+        );
       } else {
-        card.setAlpha(0.35); // 비활성
-      }
-      
-      let label: Phaser.GameObjects.Text | null = null;
-      if (isStar && canUpgrade) {
-         const starsNow = cardData.stars;
-         const starsNext = Math.min(starsNow + 1, 5);
-         label = this.add.text(cx, cy - scaledH / 2 - 8, `${'★'.repeat(starsNow)}→${'★'.repeat(starsNext)}`, {
-           fontFamily: FONT_B, fontSize: '11px', color, stroke: '#000', strokeThickness: 2
-         }).setOrigin(0.5, 1);
-      } else if (multGain !== 1.0 && canUpgrade) {
-         label = this.add.text(cx, cy - scaledH / 2 - 8, `×${currentMult.toFixed(1)}→×${nextMult.toFixed(1)}`, {
-           fontFamily: FONT_B, fontSize: '12px', color, stroke: '#000', strokeThickness: 2
-         }).setOrigin(0.5, 1);
+        card.setAlpha(0.35);
       }
 
-      card.on('pointerover', () => { if(!this.isDragging) this.tweens.add({ targets: card, scaleX: CARD_SC * 1.06, scaleY: CARD_SC * 1.06, duration: 80 })});
-      card.on('pointerout', () => this.tweens.add({ targets: card, scaleX: CARD_SC, scaleY: CARD_SC, duration: 80 }));
-      
-      card.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-        this.startX = pointer.x; // 가로 시작점
-        this.isDragging = false;
+      // 강화 수치 라벨
+      let label: Phaser.GameObjects.Text | null = null;
+      if (isStar && canUpgrade) {
+        const sn = cardData.stars;
+        label = this.add.text(cx, cy - scaledH / 2 - 4,
+          `${'★'.repeat(sn)}→${'★'.repeat(Math.min(sn + 1, 5))}`, {
+          fontFamily: FONT_B, fontSize: '11px', color, stroke: '#000', strokeThickness: 2,
+        }).setOrigin(0.5, 1);
+      } else if (multGain !== 1.0 && canUpgrade) {
+        label = this.add.text(cx, cy - scaledH / 2 - 4,
+          `×${currentMult.toFixed(1)}→×${nextMult.toFixed(1)}`, {
+          fontFamily: FONT_B, fontSize: '12px', color, stroke: '#000', strokeThickness: 2,
+        }).setOrigin(0.5, 1);
+      }
+
+      card.on('pointerover', () => {
+        if (!this.isDragging)
+          this.tweens.add({ targets: card, scaleX: CARD_SC * 1.07, scaleY: CARD_SC * 1.07, duration: 80 });
       });
-      card.on('pointerup', (pointer: Phaser.Input.Pointer) => {
-        if (!this.isDragging && Math.abs(pointer.x - this.startX) < 12) {
-          onClick(entry, cardData, currentMult, nextMult);
-        }
+      card.on('pointerout', () =>
+        this.tweens.add({ targets: card, scaleX: CARD_SC, scaleY: CARD_SC, duration: 80 }),
+      );
+      // 클릭 = pointerup 시 isDragging이 false인 경우만
+      card.on('pointerup', () => {
+        if (!this.isDragging) onClick(entry, cardData, currentMult, nextMult);
       });
 
       listCont.add(card);
       if (label) listCont.add(label);
     });
 
-    // 가로 드래그 제어
-    const bgZone = this.add.zone(0, 0, maskW, maskH).setOrigin(0.5).setInteractive();
-    this.root.add(bgZone);
+    // ── 씬 레벨 드래그 (bgZone 불필요 — 카드 클릭 차단 문제 원천 제거) ──────────
+    let contStartX = 0;
 
-    bgZone.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      this.startX = pointer.x;
-      this.scrollX = listCont.x;
+    const onDown = (pointer: Phaser.Input.Pointer) => {
+      this.startX  = pointer.x;
+      contStartX   = listCont.x;
       this.isDragging = false;
-    });
-
-    bgZone.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+    };
+    const onMove = (pointer: Phaser.Input.Pointer) => {
       if (!pointer.isDown) return;
       const dx = pointer.x - this.startX;
       if (Math.abs(dx) > 10) this.isDragging = true;
       if (this.isDragging) {
-        let targetX = this.scrollX + dx;
-        // 바운스
-        if (targetX > 0) targetX *= 0.25;
-        if (targetX < -this.maxScrollX) targetX = -this.maxScrollX + (targetX + this.maxScrollX) * 0.25;
-        listCont.setX(targetX);
+        let tx = contStartX + dx;
+        if (tx > 0)                   tx *= 0.25;
+        if (tx < -this.maxScrollX)    tx  = -this.maxScrollX + (tx + this.maxScrollX) * 0.25;
+        listCont.setX(tx);
       }
-    });
-
-    bgZone.on('pointerup', () => {
-      if (listCont.x > 0) {
+    };
+    const onUp = () => {
+      if (listCont.x > 0)
         this.tweens.add({ targets: listCont, x: 0, duration: 250, ease: 'Back.easeOut' });
-      } else if (listCont.x < -this.maxScrollX) {
+      else if (listCont.x < -this.maxScrollX)
         this.tweens.add({ targets: listCont, x: -this.maxScrollX, duration: 250, ease: 'Back.easeOut' });
-      }
+    };
+
+    this.input.on('pointerdown', onDown);
+    this.input.on('pointermove', onMove);
+    this.input.on('pointerup',   onUp);
+
+    // 씬 종료 시 리스너 정리
+    this.events.once('shutdown', () => {
+      this.input.off('pointerdown', onDown);
+      this.input.off('pointermove', onMove);
+      this.input.off('pointerup',   onUp);
+      shape.destroy();
     });
 
-    // 가로 드래그 가이드
-    if (flatList.length > 5) {
-      const guide = this.add.text(0, maskH / 2 + 35, '◀  좌우로 드래그하여 카드 탐색  ▶', {
-        fontFamily: FONT_M, fontSize: '13px', color: '#aaaaaa'
+    // 드래그 안내 (카드 4장 초과 시)
+    if (flatList.length > 4) {
+      const guide = this.add.text(0, GRID_Y + scaledH / 2 + LABEL_H + 14,
+        '◀  좌우로 드래그하여 카드 탐색  ▶', {
+        fontFamily: FONT_M, fontSize: '13px', color: '#888888',
       }).setOrigin(0.5);
       this.root.add(guide);
-      this.tweens.add({ targets: guide, alpha: 0.4, duration: 900, yoyo: true, repeat: -1 });
+      this.tweens.add({ targets: guide, alpha: 0.35, duration: 900, yoyo: true, repeat: -1 });
     }
   }
 

@@ -33,6 +33,10 @@ import cardSprite from '@src/assets/img/card/card-sprite.png';
 // attr-sprite.png: 7개 속성 아이콘 (물/불/풀/번개/돌/일반/별), 각 128px × 128px
 import attrSprite from '@src/assets/img/config/attr-sprite.png';
 
+// Import equipment assets
+import equipSheet1 from '@src/assets/img/equipment/equip_sheet_1.png';
+import equipSheet2 from '@src/assets/img/equipment/equip_sheet_2.png';
+
 export default class PreloadScene extends Phaser.Scene {
   constructor() {
     super('PreloadScene');
@@ -179,6 +183,9 @@ export default class PreloadScene extends Phaser.Scene {
     // 카드 이미지 로드
     this.load.image('card_sprites', cardSprite);
     this.load.image('attr_icons', attrSprite);
+    // 장비 아이콘 스프라이트 시트 분할 (1024x1024 해상도, 4x4 그리드 -> 256x256)
+    this.load.spritesheet('equip_sheet_1', equipSheet1, { frameWidth: 256, frameHeight: 256 });
+    this.load.spritesheet('equip_sheet_2', equipSheet2, { frameWidth: 256, frameHeight: 256 });
   }
 
   create() {

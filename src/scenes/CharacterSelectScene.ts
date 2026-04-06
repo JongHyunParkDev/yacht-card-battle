@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { i18n } from '@src/utils/localization';
+import { getEquipmentById, formatEquipStats, EQUIP_GRADE_COLOR, EQUIP_GRADE_LABEL } from '@src/data/equipmentData';
 import '@src/styles/colors.css';
 
 // ─── 타입 / 상수 ──────────────────────────────────────────────────────────────
@@ -105,6 +106,10 @@ export default class CharacterSelectScene extends Phaser.Scene {
   /** 게임 시작 버튼 */
   private startBtn!: Phaser.GameObjects.Text;
 
+  private equipTooltip!: Phaser.GameObjects.Container;
+  private equipTooltipBg!: Phaser.GameObjects.Graphics;
+  private equipTooltipText!: Phaser.GameObjects.Text;
+
   constructor() {
     super('CharacterSelectScene');
   }
@@ -137,6 +142,7 @@ export default class CharacterSelectScene extends Phaser.Scene {
     this.buildCharacterCards(layout);
     this.buildDetailPanel(layout);
     this.buildEquipmentPanel(width, height, layout);
+    this.buildTooltip();
     this.buildButtons(width, height);
 
     this.selectCharacter(0);
@@ -350,9 +356,6 @@ export default class CharacterSelectScene extends Phaser.Scene {
     }).setOrigin(0, 0.5);
 
     const labelW  = 70;
-    const btnH    = sectionH - 16;
-    const btnW    = 140;
-    const gap     = 8;
     const startX  = panelX + labelW + 10;
 
     if (this.allEquipment.length === 0) {
@@ -363,46 +366,103 @@ export default class CharacterSelectScene extends Phaser.Scene {
       return;
     }
 
+    // 장비 툴팁은 별도로 buildTooltip에서 만듦
+    // 레이아웃
+    const targetSize = 44;
+    const padding = 6;
+    const slotSize = targetSize + padding * 2;
+    // max cols based on panel width
+    const cols = Math.floor((panelW - labelW - 20) / slotSize);
+    
     // 다시 그리기 함수 목록 (선택 변경 시 전부 호출)
     const redraws: (() => void)[] = [];
 
     this.allEquipment.forEach((eq, i) => {
-      const bx   = startX + i * (btnW + gap);
-      const by   = sectionY + sectionH / 2;
-      const cont = this.add.container(bx + btnW / 2, by);
+      const eqData = getEquipmentById(eq);
+      if (!eqData) return;
+
+      const row = Math.floor(i / cols);
+      const col = i % cols;
+      
+      const bx = startX + col * slotSize + slotSize / 2;
+      const actualY = sectionY + 28 + row * slotSize;
+
+      const cont = this.add.container(bx, actualY);
 
       const bg  = this.add.graphics();
-      const lbl = this.add.text(0, 0, eq, {
-        fontFamily: 'SBAggroM', fontSize: '12px', color: '#cccccc',
-        align: 'center', wordWrap: { width: btnW - 16 },
-      }).setOrigin(0.5);
+      // Icon Sprite
+      const sprite = this.add.sprite(0, 0, eqData.texture, eqData.frame);
+      sprite.setDisplaySize(targetSize, targetSize);
 
       const redraw = () => {
         const sel = this.selectedEquip === eq;
         bg.clear();
         bg.fillStyle(sel ? 0x3a2800 : 0x1a1a2e, 1);
         bg.lineStyle(sel ? 2 : 1, sel ? 0xd4af37 : 0x444466, 1);
-        bg.fillRoundedRect(-btnW / 2, -btnH / 2, btnW, btnH, 7);
-        bg.strokeRoundedRect(-btnW / 2, -btnH / 2, btnW, btnH, 7);
-        lbl.setColor(sel ? '#f5cc4a' : '#cccccc');
+        bg.fillRoundedRect(-slotSize / 2, -slotSize / 2, slotSize, slotSize, 5);
+        bg.strokeRoundedRect(-slotSize / 2, -slotSize / 2, slotSize, slotSize, 5);
+        if (sel) {
+          sprite.setTint(0xffffee);
+        } else {
+          sprite.clearTint();
+        }
       };
       redraw();
       redraws.push(redraw);
 
-      cont.add([bg, lbl]);
-      cont.setSize(btnW, btnH);
+      cont.add([bg, sprite]);
+      cont.setSize(slotSize, slotSize);
       cont.setInteractive({ useHandCursor: true });
+
+      // tooltip content
+      const gradeColor = EQUIP_GRADE_COLOR[eqData.grade];
+      const gradeLabel = EQUIP_GRADE_LABEL[eqData.grade];
+      let ttpText = `[${gradeLabel}] ${eqData.name}\n\n`;
+      ttpText += formatEquipStats(eqData.stats);
+      if (eqData.special) {
+        ttpText += `\n★ ${eqData.special.desc}`;
+      }
 
       cont.on('pointerover', () => {
         if (this.selectedEquip !== eq) bg.setAlpha(1.4);
+        // Show tooltip
+        this.equipTooltipText.setText(ttpText);
+        // color top line
+        // We use setTint or we can just keep text basic. Let's just use simple text.
+        this.equipTooltip.setVisible(true);
+        const b = this.equipTooltipText.getBounds();
+        this.equipTooltipBg.clear();
+        this.equipTooltipBg.fillStyle(0x0d1117, 0.95);
+        this.equipTooltipBg.lineStyle(1.5, parseInt(gradeColor.replace('#', '0x')), 1);
+        this.equipTooltipBg.fillRoundedRect(0, 0, b.width + 20, b.height + 20, 6);
+        this.equipTooltipBg.strokeRoundedRect(0, 0, b.width + 20, b.height + 20, 6);
+        
+        let tx = bx;
+        let ty = actualY - slotSize/2 - b.height - 25;
+        // screen bounds check
+        if (ty < 0) ty = actualY + slotSize/2 + 5;
+        this.equipTooltip.setPosition(tx - (b.width+20)/2, ty);
       });
-      cont.on('pointerout', () => bg.setAlpha(1));
+      cont.on('pointerout', () => {
+        bg.setAlpha(1);
+        this.equipTooltip.setVisible(false);
+      });
       cont.on('pointerdown', () => {
         this.selectedEquip = this.selectedEquip === eq ? null : eq;
         redraws.forEach(fn => fn());
       });
     });
   }
+
+  private buildTooltip() {
+    this.equipTooltip = this.add.container(-1000, -1000).setDepth(2000).setVisible(false);
+    this.equipTooltipBg = this.add.graphics();
+    this.equipTooltipText = this.add.text(10, 10, '', {
+      fontFamily: 'SBAggroM', fontSize: '13px', color: '#eeeeee', lineSpacing: 5
+    });
+    this.equipTooltip.add([this.equipTooltipBg, this.equipTooltipText]);
+  }
+
 
   private buildButtons(width: number, height: number) {
     // 게임 시작

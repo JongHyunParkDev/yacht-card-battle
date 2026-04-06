@@ -439,9 +439,9 @@ export const translations = {
     'card24Desc': 'An ancient rhino carrying mountains on its back.\nDeals earth damage.',
     'card25Desc': 'Attack with weapons',
     'card26Desc': "Defence is created.\nIt offsets the damage you receive on your opponen's turn",
-    'card27Desc': "Throw a window (only for windows).\nIf the damage is higher than the enemy's blood, it will kill you immediately.",
-    'card28Desc': '(Hwall only) Remove the arrow from the barrel of the arrow.\nTake out five and consume one for each attack.',
-    'card29Desc': "a mysterious potion of red liquid.\nRestoring my physical strength."
+    'card27Desc': 'Throw a spear (Lancer only).\nInstant kill if Critical Damage \u2265 Enemy HP.',
+    'card28Desc': '(Bow only) Take arrows from your quiver.\nDeals double damage when used by a Ranger.',
+    'card29Desc': 'A mysterious red liquid.\nRestores HP.'
   }
 };
 

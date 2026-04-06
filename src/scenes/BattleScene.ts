@@ -4,6 +4,7 @@ import { getRandomEnemy, EnemyDef } from '@src/data/enemyData';
 import { i18n } from '@src/utils/localization';
 import { WeaponType, CHAR_SPRITE_KEY, CHAR_FRAME_COUNT } from '@src/scenes/CharacterSelectScene';
 import Card, { CARD_WIDTH, CARD_HEIGHT } from '@src/objects/Card';
+import type { CardEffect } from '@src/data/cardData';
 
 // ─── 인터페이스 ───────────────────────────────────────────────────────────────
 
@@ -79,6 +80,17 @@ export default class BattleScene extends Phaser.Scene {
   private rerollsUsed:  boolean[]  = [];
   private selectedCards: boolean[] = [];
   private selectionOrder: number[] = [];
+
+  // ── 적 상태이상 ───────────────────────────────────────────────────────────
+  private enemyBurnValue    = 0;   // 화상: 턴당 데미지
+  private enemyBurnDur      = 0;   // 화상 남은 턴
+  private enemyVulnerableDur = 0;  // 취약 남은 턴 (피해 +50%)
+  private enemyStunned       = false; // 기절: 다음 적 공격 스킵
+  private enemyArmorBreak    = 0;  // 방깎: 적 방어력 감소량
+
+  // ── 적 행동 예고 UI ────────────────────────────────────────────────────────
+  private enemyIntentCont: Phaser.GameObjects.Container | null = null;
+  private enemyStatusCont: Phaser.GameObjects.Container | null = null;
   private cardContainers: Phaser.GameObjects.Container[] = [];
   private rerollBtns: Phaser.GameObjects.Container[] = [];
   private attackBtn!: Phaser.GameObjects.Container;
@@ -108,8 +120,8 @@ export default class BattleScene extends Phaser.Scene {
 
   constructor() { super('BattleScene'); }
 
-  init(data: BattleSceneData) { 
-    this.data_ = data; 
+  init(data: BattleSceneData) {
+    this.data_ = data;
     this.currentTurn = 1;
     this.isAnimating = false;
     this.battleEnded = false;
@@ -121,6 +133,14 @@ export default class BattleScene extends Phaser.Scene {
     this.cardContainers = [];
     this.rerollBtns = [];
     this.currentTurnDefense = 0;
+    // 상태이상 초기화
+    this.enemyBurnValue = 0;
+    this.enemyBurnDur = 0;
+    this.enemyVulnerableDur = 0;
+    this.enemyStunned = false;
+    this.enemyArmorBreak = 0;
+    this.enemyIntentCont = null;
+    this.enemyStatusCont = null;
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -159,7 +179,10 @@ export default class BattleScene extends Phaser.Scene {
     this.createStatusHover();
     this.createAttackButton();
 
-    // 첫 손패 드로우
+    // 적 의도 및 상태이상 UI
+    this.createEnemyIntentUI();
+
+    // 첫 손패 드로우 (Guardian 패시브도 여기서)
     this.drawHand();
     this.refreshCardDisplay();
     this.updateAttackButtonState();
@@ -549,25 +572,58 @@ export default class BattleScene extends Phaser.Scene {
       this.discardPile.push(...this.hand);
       this.hand = [];
     }
-    
-    for (let i = 0; i < HAND_SIZE; i++) {
+
+    // [New Logic] Ranger/Lancer: 보장된 전용 카드 먼저 뽑기
+    if (this.data_.characterWeapon === 'bow' || this.data_.characterWeapon === 'spear') {
+      const targetId = this.data_.characterWeapon === 'bow' ? 28 : 27; // 28: Arrow, 27: Spear
+      
+      // 1. drawPile에서 찾기
+      let targetIdx = this.drawPile.findIndex(c => c.id === targetId);
+      
+      // 2. drawPile에 없으면 discardPile에서 찾기
+      if (targetIdx === -1) {
+        const discIdx = this.discardPile.findIndex(c => c.id === targetId);
+        if (discIdx !== -1) {
+          // reshuffle (drawPile로 합친 뒤 random shuffle)
+          this.drawPile.push(...this.discardPile);
+          this.discardPile = [];
+          this.drawPile.sort(() => Math.random() - 0.5);
+          targetIdx = this.drawPile.findIndex(c => c.id === targetId);
+        }
+      }
+      
+      // 3. 찾았으면 손패로 (HAND_SIZE 1개 차지)
+      if (targetIdx !== -1) {
+        const card = this.drawPile.splice(targetIdx, 1)[0];
+        this.hand.push(card);
+      }
+    }
+
+    // 나머지 채우기
+    while (this.hand.length < HAND_SIZE) {
       if (this.drawPile.length === 0) {
-        // 뽑을 카드가 없으면 discardPile을 다시 셔플해서 채움
         if (this.discardPile.length > 0) {
           this.drawPile = [...this.discardPile].sort(() => Math.random() - 0.5);
           this.discardPile = [];
-          console.log(`[Battle] Draw pile empty. Reshuffling ${this.drawPile.length} cards from discard pile.`);
         } else {
-          // 진짜 없으면 종료 (보통 발생하지 않음)
           break;
         }
       }
       this.hand.push(this.drawPile.shift()!);
     }
-    
-    this.rerollsUsed  = Array(HAND_SIZE).fill(false);
-    this.selectedCards= Array(HAND_SIZE).fill(false);
+
+    this.rerollsUsed   = Array(HAND_SIZE).fill(false);
+    this.selectedCards = Array(HAND_SIZE).fill(false);
     this.selectionOrder = [];
+
+    // Guardian 패시브: 매 턴 시작 시 방어막 +5
+    if (this.data_.characterWeapon === 'swordShield') {
+      this.currentTurnDefense += 5;
+      this.updateShieldBadge();
+    }
+
+    // 적 행동 예고 갱신
+    this.updateEnemyIntent();
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -637,18 +693,24 @@ export default class BattleScene extends Phaser.Scene {
   private onReroll(idx: number) {
     if (this.isAnimating || this.rerollsUsed[idx] || this.battleEnded) return;
 
+    // 대체 카드 확보 (실패 시 토큰 소비 않음)
     if (this.drawPile.length === 0) {
       if (this.discardPile.length > 0) {
         this.drawPile = [...this.discardPile].sort(() => Math.random() - 0.5);
         this.discardPile = [];
-        console.log(`[Battle] Draw pile empty on Reroll. Reshuffling.`);
       } else {
-        return;
+        return; // 대체 카드 없음 — 리롤 불가
       }
     }
 
-    this.hand[idx] = this.drawPile.shift()!;
+    // 즉시 잠금 (Phaser가 같은 프레임에 이벤트 2개를 처리해도 2번 실행 방지)
     this.rerollsUsed[idx] = true;
+    this.rerollBtns[idx]?.disableInteractive();
+
+    // 기존 카드는 버림패로 보냄 (덱에서 카드 소실 방지)
+    this.discardPile.push(this.hand[idx]);
+    this.hand[idx] = this.drawPile.shift()!;
+
     this.selectedCards[idx] = false;
     this.selectionOrder = this.selectionOrder.filter(i => i !== idx);
     this.refreshCardDisplay();
@@ -766,88 +828,152 @@ export default class BattleScene extends Phaser.Scene {
       // 0. 기초 수치 분배
       if (card.key === 'shield' || card.key === 'defense') {
         shield = baseVal * (this.data_.playerShieldMult || 1.0);
+        // Guardian 패시브: 방어 카드 2배
+        if (this.data_.characterWeapon === 'swordShield') shield *= 2;
       } else if (card.key === 'hp') {
         heal = baseVal;
       } else if (card.key === 'arrow') {
         dmg = baseVal;
+        // Ranger 패시브: 화살 카드 2배
+        if (this.data_.characterWeapon === 'bow') dmg *= 2;
       } else {
-        // attack, spear 등
         dmg = baseVal;
       }
 
+      // effects에 shield_add / heal이 있는 경우 비공격 카드처럼 먼저 적용
+      const shieldEff = card.effects?.find(e => e.type === 'shield_add');
+      const healEff   = card.effects?.find(e => e.type === 'heal');
+
+      if (shieldEff) {
+        let shieldVal = shieldEff.value * (card.mult || 1) * (this.data_.playerShieldMult || 1);
+        if (this.data_.characterWeapon === 'swordShield') shieldVal *= 2; // Guardian
+        this.currentTurnDefense += shieldVal;
+        this.updateShieldBadge();
+      }
+      if (healEff) {
+        const healAmt = Math.floor(healEff.value * (card.mult || 1));
+        this.playerCurrentHp = Math.min(this.data_.playerMaxHp, this.playerCurrentHp + healAmt);
+        this.updatePlayerHpBar();
+        this.showFloatingHeal(this.playerSprite.x, this.playerSprite.y - 50, healAmt);
+      }
+
       if (dmg > 0) {
-        // 1. 속성 데미지 계산
-        if (card.element !== 'normal') {
-          if (TYPE_BEATS[card.element] === this.data_.mapElement) dmg *= 1.5;
-          else if (TYPE_BEATS[this.data_.mapElement] === card.element) dmg *= 0.5;
-        }
+        // ── multi_hit 처리 ────────────────────────────────────────────────
+        const multiHit = card.effects?.find(e => e.type === 'multi_hit');
+        const hitCount = multiHit ? multiHit.value : 1;
 
-        // 2. 크리티컬 여부
-        let critChance = this.data_.playerCrit;
-        if (card.key === 'spear') {
-          if (this.enemyCurrentHp <= dmg * this.data_.playerCritDmg) {
-            critChance = 100;
+        let hitsDone = 0;
+        const doOneHit = () => {
+          if (this.enemyCurrentHp <= 0 || this.battleEnded) { resolve(); return; }
+
+          // 1. 속성 상성
+          let hitDmg = baseVal;
+          if (card.element !== 'normal') {
+            if (TYPE_BEATS[card.element] === this.data_.mapElement) hitDmg *= 1.5;
+            else if (TYPE_BEATS[this.data_.mapElement] === card.element) hitDmg *= 0.5;
           }
-        }
-        const isCrit = Math.random() * 100 < critChance;
 
-        // 3. 데미지 * 크리뎀 계산
-        let cardDmg = isCrit ? dmg * this.data_.playerCritDmg : dmg;
+          // 2. 취약 (Vulnerable)
+          if (this.enemyVulnerableDur > 0) hitDmg *= 1.5;
 
-        // 4. 추뎀 산출 (콤보 계산)
-        const sameCards = cards.slice(0, step + 1).filter(c => c.id === card.id);
-        const sameElems = cards.slice(0, step + 1).filter(c => c.element === card.element && card.element !== 'normal');
+          // 3. 크리티컬
+          let critChance = this.data_.playerCrit;
+          // Berserker 패시브: HP < 50% → 크리 확률 +20%
+          if (this.data_.characterWeapon === 'greatsword' && this.playerCurrentHp < this.data_.playerMaxHp * 0.5) {
+            critChance += 20;
+          }
+          // Lancer 패시브: spear 카드 항상 크리
+          if (this.data_.characterWeapon === 'spear' && card.key === 'spear') critChance = 100;
 
-        let bonusDmg = 0;
-        if (sameCards.length === 2) {
-          bonusDmg = cardDmg * 0.5;
-        } else if (sameCards.length === 3) {
-          bonusDmg = cardDmg * 1.0;
-        } else if (sameElems.length === 2) {
-          const vals = sameElems.map(c => c.value * (c.mult || 1.0) * (this.data_.playerCardMult || 1.0));
-          bonusDmg = Math.min(...vals) * 0.2;
-        } else if (sameElems.length === 3) {
-          const sorted = [...sameElems].map(c => c.value * (c.mult || 1.0) * (this.data_.playerCardMult || 1.0)).sort((a, b) => a - b);
-          const median = sorted[1];
-          bonusDmg = median * 0.4;
-        }
+          const isCrit = Math.random() * 100 < critChance;
+          let critDmgMult = this.data_.playerCritDmg;
+          // Berserker 패시브: HP < 50% → 크리뎀 +0.3
+          if (this.data_.characterWeapon === 'greatsword' && this.playerCurrentHp < this.data_.playerMaxHp * 0.5) {
+            critDmgMult += 0.3;
+          }
+          let cardDmg = isCrit ? hitDmg * critDmgMult : hitDmg;
 
-        let finalDmg = cardDmg + bonusDmg;
-        const totalBeforeDef = finalDmg;
+          // 4. 콤보 추뎀
+          const sameCards = cards.slice(0, step + 1).filter(c => c.id === card.id);
+          const sameElems = cards.slice(0, step + 1).filter(c => c.element === card.element && card.element !== 'normal');
+          let comboBonusMult = 1;
+          // Titan 패시브: 동일 카드 콤보 보너스 2배
+          if (this.data_.characterWeapon === 'hammer') comboBonusMult = 2;
 
-        // 5. 적 방어력 적용
-        finalDmg = Math.max(1, Math.floor(finalDmg * (50 / (50 + Math.max(0, this.enemyDef)))));
+          let bonusDmg = 0;
+          if (sameCards.length === 2) bonusDmg = cardDmg * 0.5 * comboBonusMult;
+          else if (sameCards.length === 3) bonusDmg = cardDmg * 1.0 * comboBonusMult;
+          else if (sameElems.length === 2) {
+            const vals = sameElems.map(c => c.value * (c.mult || 1) * (this.data_.playerCardMult || 1));
+            bonusDmg = Math.min(...vals) * 0.2;
+          } else if (sameElems.length === 3) {
+            const sorted = [...sameElems].map(c => c.value * (c.mult || 1) * (this.data_.playerCardMult || 1)).sort((a, b) => a - b);
+            bonusDmg = sorted[1] * 0.4;
+          }
 
-        console.log(`--- [플레이어 타격 - Step ${step + 1}] ---`);
-        console.log(`> 기초 발동 수치(무기/버프 포함 baseVal): ${baseVal.toFixed(2)}`);
-        console.log(`> 속성 유리/불리 적용 후: ${dmg.toFixed(2)}`);
-        console.log(`> 크리티컬 발동여부: ${isCrit ? '치명타!' : '일반'} (크리적용 후: ${cardDmg.toFixed(2)})`);
-        console.log(`> 중첩/연계 보너스 추뎀 (bonusDmg): ${bonusDmg.toFixed(2)}`);
-        console.log(`> 적 방어력 적용 전 총합: ${totalBeforeDef.toFixed(2)} | 적 방어력: ${this.enemyDef}`);
-        console.log(`> 최종 피해량: ${finalDmg}`);
-        console.log(`----------------------------------`);
+          // 5. 연쇄(chain) 효과: 적 상태이상 시 추가 피해
+          let chainBonus = 0;
+          const chainEff = card.effects?.find(e => e.type === 'chain');
+          if (chainEff) {
+            const hasStatus = this.enemyBurnDur > 0 || this.enemyVulnerableDur > 0 || this.enemyStunned;
+            if (hasStatus) {
+              chainBonus = chainEff.value * (card.mult || 1) * (this.data_.playerCardMult || 1);
+              // Ranger 패시브: chain 데미지 +50%
+              if (this.data_.characterWeapon === 'bow') chainBonus *= 1.5;
+            }
+          }
 
-        // 6. 적용 및 연출
-        this.playPlayerAttack(card.element, () => {
-          this.enemyCurrentHp = Math.max(0, this.enemyCurrentHp - finalDmg);
-          this.updateEnemyHpBar();
-          this.playEnemyHit(card.element, isCrit);
+          let finalDmg = cardDmg + bonusDmg + chainBonus;
 
-          this.showFloatingDamage(this.enemyContainer.x, this.enemyContainer.y - 40, finalDmg, isCrit, '#2ecc71');
-          
-          const critTxt = isCrit ? ' ★CRIT!' : '';
-          const comboTxt = bonusDmg > 0 ? ' (추가 데미지!)' : '';
-          this.statusText.setText(`${this.data_.mobName}에게 ${Math.floor(finalDmg)}${critTxt}${comboTxt}`).setColor('#2ecc71');
-          
-          this.time.delayedCall(isFastForward ? 150 : 350, () => resolve());
-        }, isFastForward);
+          // 6. 방어력 적용 (pierce 시 무시)
+          const isPierce = card.effects?.some(e => e.type === 'pierce');
+          if (!isPierce) {
+            const effectiveDef = Math.max(0, this.enemyDef - this.enemyArmorBreak);
+            finalDmg = Math.max(1, Math.floor(finalDmg * (50 / (50 + effectiveDef))));
+          } else {
+            finalDmg = Math.max(1, Math.floor(finalDmg));
+          }
+
+          // 7. 연출 → 데미지 적용
+          this.playPlayerAttack(card.element, () => {
+            this.enemyCurrentHp = Math.max(0, this.enemyCurrentHp - finalDmg);
+            this.updateEnemyHpBar();
+            this.playEnemyHit(card.element, isCrit);
+            this.showFloatingDamage(this.enemyContainer.x, this.enemyContainer.y - 40, finalDmg, isCrit, '#2ecc71');
+
+            // chain 연쇄 추가 피해 표시
+            if (chainBonus > 0) {
+              this.time.delayedCall(200, () => {
+                this.showFloatingDamage(this.enemyContainer.x + 20, this.enemyContainer.y - 70, chainBonus, false, '#ffe033');
+              });
+            }
+
+            const critTxt   = isCrit ? ' ★CRIT!' : '';
+            const combotxt  = bonusDmg > 0 ? ' (콤보!)' : '';
+            const chaintxt  = chainBonus > 0 ? ' ⚡연쇄!' : '';
+            this.statusText.setText(`${this.data_.mobName}에게 ${Math.floor(finalDmg)}${critTxt}${combotxt}${chaintxt}`).setColor('#2ecc71');
+
+            // 8. 카드 효과 적용 (상태이상 부여)
+            this.applyCardEffects(card.effects ?? []);
+            this.updateEnemyStatusDisplay();
+
+            hitsDone++;
+            if (hitsDone < hitCount) {
+              // 다중 타격: 잠시 후 다음 타격
+              this.time.delayedCall(isFastForward ? 100 : 280, doOneHit);
+            } else {
+              this.time.delayedCall(isFastForward ? 120 : 300, () => resolve());
+            }
+          }, isFastForward, card.stars);
+        };
+
+        doOneHit();
 
       } else {
-        // 비공격성 카드 처리
+        // 비공격 카드 (defense/shield/hp key)
         if (shield > 0) {
           this.currentTurnDefense += shield;
-          this.statusText.setText(`방어력 ${Math.floor(shield)} 증가!`).setColor('#3498db');
-          // 쉴드 뱃지 표시
+          this.statusText.setText(`방어막 ${Math.floor(shield)} 생성!`).setColor('#56b4f7');
           this.updateShieldBadge();
         }
         if (heal > 0) {
@@ -855,7 +981,7 @@ export default class BattleScene extends Phaser.Scene {
           this.updatePlayerHpBar();
           this.statusText.setText(`HP ${Math.floor(heal)} 회복!`).setColor('#2ecc71');
         }
-        this.time.delayedCall(isFastForward ? 250 : 550, () => resolve());
+        this.time.delayedCall(isFastForward ? 200 : 450, () => resolve());
       }
     });
   }
@@ -900,11 +1026,11 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // 플레이어 공격 트위너 (속성별 다른 스타일)
+  // 플레이어 공격 트위너 (속성별 다른 스타일 + 프로젝타일 발사)
   // ───────────────────────────────────────────────────────────────────────────
-  private playPlayerAttack(elem: string, onComplete: () => void, isFastForward = false) {
+  private playPlayerAttack(elem: string, onComplete: () => void, isFastForward = false, stars = 0) {
     const startX = this.playerSprite.x;
-    const dashX  = startX + this.W * 0.28;
+    const dashX  = startX + this.W * 0.20; // 살짝 짧게 대시 (프로젝타일 공간 확보)
 
     const easeMap: Record<string, string> = {
       water:     'Sine.easeInOut',
@@ -915,12 +1041,12 @@ export default class BattleScene extends Phaser.Scene {
       normal:    'Power1.easeInOut',
     };
     const durMap: Record<string, number> = {
-      water: 250, fire: 150, grass: 300, lightning: 80, earth: 350, normal: 200,
+      water: 200, fire: 130, grass: 250, lightning: 70, earth: 300, normal: 180,
     };
-    const ease     = easeMap[elem]  ?? 'Power1.easeInOut';
-    let dashDur  = durMap[elem]   ?? 200;
+    const ease    = easeMap[elem]  ?? 'Power1.easeInOut';
+    let dashDur = durMap[elem]   ?? 180;
     if (isFastForward) {
-      dashDur = Math.max(50, Math.floor(dashDur * 0.4));
+      dashDur = Math.max(40, Math.floor(dashDur * 0.4));
     }
     const elemColor = ELEM_COLORS[elem] ?? 0xffffff;
 
@@ -934,14 +1060,20 @@ export default class BattleScene extends Phaser.Scene {
       ease,
       onComplete: () => {
         this.playerSprite.clearTint();
+
+        // 대시 정점에서 프로젝타일 발사
+        const launchX = this.playerSprite.x;
+        const launchY = this.playerSprite.y - 20;
+        this.launchProjectile(elem, launchX, launchY, isFastForward, () => {
+          onComplete(); // 프로젝타일이 적에 도달하면 데미지 콜백
+        }, stars);
+
+        // 플레이어는 프로젝타일과 동시에 복귀
         this.tweens.add({
           targets:  this.playerSprite,
           x:        startX,
-          duration: dashDur + 100, // 돌아오는 모션 소폭 감속
+          duration: dashDur + 80,
           ease:     'Power2.easeOut',
-          onComplete: () => {
-            onComplete();
-          },
         });
       },
     });
@@ -950,9 +1082,9 @@ export default class BattleScene extends Phaser.Scene {
     if (elem === 'lightning') {
       this.tweens.add({
         targets:   this.playerSprite,
-        angle:     { from: -6, to: 6 },
-        duration:  40,
-        repeat:    4,
+        angle:     { from: -8, to: 8 },
+        duration:  30,
+        repeat:    5,
         yoyo:      true,
         onComplete: () => this.playerSprite.setAngle(0),
       });
@@ -995,7 +1127,38 @@ export default class BattleScene extends Phaser.Scene {
   // 적 턴
   // ───────────────────────────────────────────────────────────────────────────
   private doEnemyTurn() {
-    // 적 방어력 무시하고 적 공격력에서 내 방어력 상쇄 (방어력 효율)
+    // ── 화상(Burn) 처리 ─────────────────────────────────────────────────────
+    if (this.enemyBurnDur > 0) {
+      const burnDmg = this.enemyBurnValue;
+      this.enemyCurrentHp = Math.max(0, this.enemyCurrentHp - burnDmg);
+      this.updateEnemyHpBar();
+      this.showFloatingDamage(this.enemyContainer.x, this.enemyContainer.y - 60, burnDmg, false, '#ff6600');
+      this.statusText.setText(`🔥 화상 ${burnDmg} 피해! (${this.enemyBurnDur}턴 남음)`).setColor('#ff6600');
+      this.enemyBurnDur--;
+      this.updateEnemyStatusDisplay();
+      if (this.enemyCurrentHp <= 0) {
+        this.time.delayedCall(600, () => this.endBattle(true));
+        return;
+      }
+    }
+
+    // ── 취약 기간 차감 ───────────────────────────────────────────────────────
+    if (this.enemyVulnerableDur > 0) {
+      this.enemyVulnerableDur--;
+      this.updateEnemyStatusDisplay();
+    }
+
+    // ── 기절(Stun): 이번 턴 적 공격 스킵 ───────────────────────────────────
+    if (this.enemyStunned) {
+      this.enemyStunned = false;
+      this.statusText.setText(`💫 ${this.data_.mobName} 기절! 공격 스킵`).setColor('#aaaaff');
+      this.cameras.main.shake(100, 0.005);
+      this.updateEnemyStatusDisplay();
+      this.time.delayedCall(900, () => this.advanceToNextTurn());
+      return;
+    }
+
+    // ── 적 공격력 계산 ───────────────────────────────────────────────────────
     const enemyAtkOriginal = this.enemyAtk;
     let enemyDmg = this.enemyAtk;
     enemyDmg = Math.max(1, Math.floor(enemyDmg * (50 / (50 + this.data_.playerDef))));
@@ -1047,21 +1210,7 @@ export default class BattleScene extends Phaser.Scene {
               return;
             }
 
-            // 다음 턴
-            this.currentTurn++;
-            if (this.currentTurn > MAX_TURNS) {
-              this.endBattle(this.playerCurrentHp >= this.enemyCurrentHp);
-              return;
-            }
-
-            this.turnLabel.setText(`TURN ${this.currentTurn} / ${MAX_TURNS}`);
-            this.drawHand();
-            this.refreshCardDisplay();
-            this.updateAttackButtonState();
-            this.time.delayedCall(300, () => {
-              this.statusText.setText('');
-              this.isAnimating = false;
-            });
+            this.advanceToNextTurn();
           },
         });
       },
@@ -1252,5 +1401,316 @@ export default class BattleScene extends Phaser.Scene {
       duration: 300,
       ease: 'Back.easeOut'
     });
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 다음 턴 진행 (공통 로직 추출)
+  // ───────────────────────────────────────────────────────────────────────────
+  private advanceToNextTurn() {
+    if (this.playerCurrentHp <= 0) {
+      this.time.delayedCall(600, () => this.endBattle(false));
+      return;
+    }
+    this.currentTurn++;
+    if (this.currentTurn > MAX_TURNS) {
+      this.endBattle(this.playerCurrentHp >= this.enemyCurrentHp);
+      return;
+    }
+    this.turnLabel.setText(`TURN ${this.currentTurn} / ${MAX_TURNS}`);
+    this.drawHand();
+    this.refreshCardDisplay();
+    this.updateAttackButtonState();
+    this.time.delayedCall(300, () => {
+      this.statusText.setText('');
+      this.isAnimating = false;
+    });
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 카드 효과 적용 (상태이상 부여)
+  // ───────────────────────────────────────────────────────────────────────────
+  private applyCardEffects(effects: CardEffect[]) {
+    for (const eff of effects) {
+      switch (eff.type) {
+        case 'burn':
+          // 화상: 기존보다 강한 쪽으로 덮어씌움
+          if (eff.value > this.enemyBurnValue || (this.enemyBurnDur === 0)) {
+            this.enemyBurnValue = eff.value;
+          }
+          this.enemyBurnDur = Math.max(this.enemyBurnDur, eff.duration ?? 2);
+          break;
+        case 'vulnerable':
+          this.enemyVulnerableDur = Math.max(this.enemyVulnerableDur, eff.duration ?? 1);
+          break;
+        case 'stun':
+          this.enemyStunned = true;
+          break;
+        case 'armor_break':
+          this.enemyArmorBreak += eff.value;
+          break;
+        // heal / shield_add / multi_hit / pierce / chain 은 executeCardAction에서 직접 처리
+        default: break;
+      }
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 회복 플로팅 텍스트
+  // ───────────────────────────────────────────────────────────────────────────
+  private showFloatingHeal(x: number, y: number, amount: number) {
+    if (amount <= 0) return;
+    const txt = this.add.text(x, y, `+${Math.floor(amount)} HP`, {
+      fontFamily: FONT_B, fontSize: '24px', color: '#00e676',
+      stroke: '#005020', strokeThickness: 3,
+    }).setOrigin(0.5);
+    this.tweens.add({
+      targets: txt, y: y - 45, alpha: 0, duration: 1000, ease: 'Power2.easeOut',
+      onComplete: () => txt.destroy(),
+    });
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 적 상태이상 배지 UI 생성
+  // ───────────────────────────────────────────────────────────────────────────
+  private createEnemyIntentUI() {
+    const ex = this.W * 0.82;
+
+    // 적 의도 (다음 공격 예고) — 적 위쪽
+    this.enemyIntentCont = this.add.container(ex, this.H * 0.195);
+    const iBg = this.add.graphics();
+    iBg.fillStyle(0x1a0a0a, 0.85);
+    iBg.lineStyle(1, 0xd4af37, 0.5);
+    iBg.fillRoundedRect(-65, -14, 130, 28, 6);
+    iBg.strokeRoundedRect(-65, -14, 130, 28, 6);
+    const iTxt = this.add.text(0, 0, '', { fontFamily: FONT_M, fontSize: '13px', color: '#ffaaaa' })
+      .setOrigin(0.5).setName('intentTxt');
+    this.enemyIntentCont.add([iBg, iTxt]);
+
+    // 상태이상 배지 — HP바 아래
+    this.enemyStatusCont = this.add.container(ex, this.H * 0.645);
+    const sTxt = this.add.text(0, 0, '', { fontFamily: FONT_M, fontSize: '12px', color: '#ff9944', align: 'center' })
+      .setOrigin(0.5).setName('statusTxt');
+    this.enemyStatusCont.add(sTxt);
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 적 행동 예고 갱신
+  // ───────────────────────────────────────────────────────────────────────────
+  private updateEnemyIntent() {
+    if (!this.enemyIntentCont) return;
+    const txt = this.enemyIntentCont.getByName('intentTxt') as Phaser.GameObjects.Text;
+    if (!txt) return;
+
+    if (this.battleEnded) { txt.setText(''); return; }
+
+    if (this.enemyStunned) {
+      txt.setText('💫 기절 중').setColor('#aaaaff');
+    } else {
+      const rawDmg = Math.max(1, Math.floor(this.enemyAtk * (50 / (50 + this.data_.playerDef))));
+      const shieldMitigated = Math.max(0, rawDmg - this.currentTurnDefense);
+      txt.setText(`⚔ 예고 공격: -${rawDmg}`).setColor(shieldMitigated >= rawDmg * 0.5 ? '#ff7777' : '#ffaaaa');
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 적 상태이상 표시 갱신
+  // ───────────────────────────────────────────────────────────────────────────
+  private updateEnemyStatusDisplay() {
+    if (!this.enemyStatusCont) return;
+    const txt = this.enemyStatusCont.getByName('statusTxt') as Phaser.GameObjects.Text;
+    if (!txt) return;
+
+    const parts: string[] = [];
+    if (this.enemyBurnDur > 0)        parts.push(`🔥화상 ${this.enemyBurnValue}/턴 (${this.enemyBurnDur})`);
+    if (this.enemyVulnerableDur > 0)  parts.push(`💧취약 (${this.enemyVulnerableDur})`);
+    if (this.enemyStunned)            parts.push('💫기절');
+    if (this.enemyArmorBreak > 0)     parts.push(`🪨방깎 -${this.enemyArmorBreak}`);
+    txt.setText(parts.join('  '));
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 속성별 프로젝타일 애니메이션
+  // ───────────────────────────────────────────────────────────────────────────
+  private launchProjectile(elem: string, fromX: number, fromY: number, fast: boolean, onHit: () => void, stars = 0) {
+    const toX = this.enemyContainer.x;
+    const toY = this.enemyContainer.y - 10;
+    const travelDur = fast ? 130 : 260;
+
+    // 별 등급에 따른 스케일 (1성: 1.0, 2성: 1.18, 3성: 1.36, 4성: 1.54, 5성: 1.72)
+    const scaleFactor = stars > 0 ? 1 + (stars - 1) * 0.18 : 1.0;
+
+    // 속성별 프로젝타일 그래픽 생성
+    const proj = this.add.graphics();
+    proj.setDepth(10);
+    proj.setScale(scaleFactor);
+
+    switch (elem) {
+      case 'fire': {
+        proj.fillStyle(0xff4500, 1);
+        proj.fillCircle(0, 0, 13);
+        proj.fillStyle(0xff8800, 0.7);
+        proj.fillCircle(-2, -2, 7);
+        proj.fillStyle(0xffdd00, 0.5);
+        proj.fillCircle(-3, -3, 3);
+        break;
+      }
+      case 'water': {
+        proj.fillStyle(0x2288ff, 0.85);
+        proj.fillCircle(0, 0, 11);
+        proj.fillStyle(0xaaddff, 0.6);
+        proj.fillCircle(-3, -3, 5);
+        proj.lineStyle(2, 0x55aaff, 0.9);
+        proj.strokeCircle(0, 0, 13);
+        break;
+      }
+      case 'lightning': {
+        // 번개 볼트 형태
+        proj.fillStyle(0xffee00, 1);
+        proj.fillTriangle(-6, -16, 4, 0, -2, 0);
+        proj.fillTriangle(-2, 0, 8, 0, 2, 16);
+        proj.fillStyle(0xffffff, 0.6);
+        proj.fillCircle(0, 0, 5);
+        break;
+      }
+      case 'grass': {
+        proj.fillStyle(0x22cc55, 0.9);
+        proj.fillEllipse(0, 0, 14, 22);
+        proj.fillStyle(0x55ff88, 0.5);
+        proj.fillEllipse(-2, -3, 7, 11);
+        proj.lineStyle(1.5, 0x008833, 0.8);
+        proj.strokeEllipse(0, 0, 14, 22);
+        break;
+      }
+      case 'earth': {
+        proj.fillStyle(0x8B5E2A, 1);
+        proj.fillCircle(0, 0, 13);
+        proj.fillStyle(0xAA8044, 0.6);
+        proj.fillCircle(-3, -4, 7);
+        proj.fillStyle(0x664422, 0.5);
+        proj.fillCircle(3, 3, 5);
+        break;
+      }
+      default: { // normal
+        proj.fillStyle(0xffffff, 0.85);
+        proj.fillRect(-3, -16, 6, 32);
+        proj.fillStyle(0xd4af37, 0.7);
+        proj.fillRect(-1, -12, 2, 24);
+        break;
+      }
+    }
+
+    proj.setPosition(fromX, fromY);
+
+    // 이동 트윈
+    const startAngle = Phaser.Math.Angle.Between(fromX, fromY, toX, toY) * (180 / Math.PI);
+    if (['earth', 'grass'].includes(elem)) proj.setAngle(startAngle);
+
+    // 번개: 지그재그 경로
+    if (elem === 'lightning') {
+      const steps = fast ? 3 : 5;
+      const stepDur = travelDur / steps;
+      let s = 0;
+      const doStep = () => {
+        if (s >= steps) { this.playHitBurst(toX, toY, elem); proj.destroy(); onHit(); return; }
+        const t = (s + 1) / steps;
+        const mx = fromX + (toX - fromX) * t + (s % 2 === 0 ? 20 : -20);
+        const my = fromY + (toY - fromY) * t + (Math.random() - 0.5) * 30;
+        this.tweens.add({
+          targets: proj, x: mx, y: my, duration: stepDur,
+          ease: 'Linear', onComplete: () => { s++; doStep(); }
+        });
+      };
+      doStep();
+    } else {
+      // 일반 포물선 이동
+      const midY = Math.min(fromY, toY) - 40;
+      this.tweens.add({
+        targets: proj, x: toX,
+        duration: travelDur,
+        ease: 'Power1.easeIn',
+        onUpdate: (tween) => {
+          const p = tween.progress;
+          proj.y = fromY + (toY - fromY) * p - Math.sin(p * Math.PI) * 40;
+          if (['earth', 'grass'].includes(elem)) proj.angle += fast ? 8 : 5;
+        },
+        onComplete: () => {
+          this.playHitBurst(toX, toY, elem);
+          proj.destroy();
+          onHit();
+        }
+      });
+    }
+
+    // 불 카드: 파티클 흔적
+    if (elem === 'fire') {
+      const trailCount = fast ? 3 : 6;
+      for (let i = 0; i < trailCount; i++) {
+        this.time.delayedCall(i * (travelDur / trailCount * 0.6), () => {
+          if (!proj.active) return;
+          const trail = this.add.graphics();
+          trail.fillStyle(0xff6600, 0.5 - i * 0.06);
+          trail.fillCircle(0, 0, 8 - i);
+          trail.setPosition(proj.x, proj.y).setDepth(9);
+          this.tweens.add({
+            targets: trail, alpha: 0, scale: 0.3, duration: 250,
+            onComplete: () => trail.destroy(),
+          });
+        });
+      }
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 프로젝타일 착탄 이펙트
+  // ───────────────────────────────────────────────────────────────────────────
+  private playHitBurst(x: number, y: number, elem: string) {
+    const color = ELEM_COLORS[elem] ?? 0xffffff;
+    const burstCount = 8;
+
+    // 방사형 폭발 선
+    for (let i = 0; i < burstCount; i++) {
+      const angle = (i / burstCount) * Math.PI * 2;
+      const line = this.add.graphics();
+      line.lineStyle(2.5, color, 1);
+      const len = elem === 'lightning' ? 30 : 22;
+      line.lineBetween(0, 0, Math.cos(angle) * len, Math.sin(angle) * len);
+      line.setPosition(x, y).setDepth(11);
+      this.tweens.add({
+        targets: line, scaleX: 1.8, scaleY: 1.8, alpha: 0,
+        duration: elem === 'lightning' ? 250 : 350,
+        ease: 'Power2.easeOut',
+        onComplete: () => line.destroy(),
+      });
+    }
+
+    // 중앙 플래시
+    const flash = this.add.graphics();
+    flash.fillStyle(color, 0.85);
+    flash.fillCircle(0, 0, elem === 'fire' ? 30 : 22);
+    flash.setPosition(x, y).setDepth(11);
+    this.tweens.add({
+      targets: flash, alpha: 0, scale: 2.2,
+      duration: elem === 'lightning' ? 200 : 400,
+      ease: 'Power3.easeOut',
+      onComplete: () => flash.destroy(),
+    });
+
+    // 번개: 화면 순간 밝아짐
+    if (elem === 'lightning') {
+      const whiteFlash = this.add.graphics();
+      whiteFlash.fillStyle(0xffffff, 0.2);
+      whiteFlash.fillRect(0, 0, this.W, this.H);
+      whiteFlash.setDepth(50);
+      this.tweens.add({
+        targets: whiteFlash, alpha: 0, duration: 120,
+        onComplete: () => whiteFlash.destroy(),
+      });
+      this.cameras.main.shake(120, 0.012);
+    }
+
+    // 불: 히트 스탑 (80ms 게임 정지 느낌)
+    if (elem === 'fire') {
+      this.cameras.main.shake(80, 0.008);
+    }
   }
 }

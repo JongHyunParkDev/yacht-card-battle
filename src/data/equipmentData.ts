@@ -70,6 +70,8 @@ export interface EquipmentData {
   grade:    EquipGrade;
   stats:    EquipStat;
   special?: SpecialEffect;
+  texture:  string;
+  frame:    number;
 }
 
 // ─── 장비 목록 (30개) ─────────────────────────────────────────────────────────
@@ -93,6 +95,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
     desc: '단단한 철로 만든 반지. 착용자의 힘을 끌어올린다.',
     grade: 'common',
     stats: { atk: 5 },
+    texture: 'equip_sheet_1',
+    frame: 0
   },
   {
     id: 'leather_bracelet',
@@ -100,6 +104,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
     desc: '두꺼운 가죽으로 엮은 팔찌. 방어에 도움이 된다.',
     grade: 'common',
     stats: { def: 3 },
+    texture: 'equip_sheet_1',
+    frame: 1
   },
   {
     id: 'basic_amulet',
@@ -107,6 +113,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
     desc: '초보 술사가 만든 부적. 생명력을 소폭 늘려준다.',
     grade: 'common',
     stats: { maxHp: 10 },
+    texture: 'equip_sheet_1',
+    frame: 2
   },
   {
     id: 'sharp_fang',
@@ -114,6 +122,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
     desc: '맹수의 이빨로 만든 장식품. 급소를 노리는 감각이 예리해진다.',
     grade: 'common',
     stats: { crit: 3 },
+    texture: 'equip_sheet_1',
+    frame: 3
   },
   {
     id: 'wooden_shield_charm',
@@ -121,6 +131,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
     desc: '오래된 목재 방패의 파편으로 만든 부적. 방어 카드의 효율이 높아진다.',
     grade: 'common',
     stats: { shieldMult: 1.10 },
+    texture: 'equip_sheet_1',
+    frame: 4
   },
   {
     id: 'red_stone_ring',
@@ -128,6 +140,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
     desc: '불의 정수가 깃든 루비 반지. 화염 공격이 더욱 강렬해진다.',
     grade: 'common',
     stats: { elementAtkBonus: { fire: 10 } },
+    texture: 'equip_sheet_1',
+    frame: 5
   },
   {
     id: 'blue_gem_necklace',
@@ -135,6 +149,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
     desc: '물의 기운이 담긴 사파이어 목걸이. 물 속성 공격력이 높아진다.',
     grade: 'common',
     stats: { elementAtkBonus: { water: 10 } },
+    texture: 'equip_sheet_1',
+    frame: 6
   },
   {
     id: 'vine_bracelet',
@@ -142,6 +158,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
     desc: '신성한 숲의 덩굴로 엮은 팔찌. 풀 속성 공격이 강화된다.',
     grade: 'common',
     stats: { elementAtkBonus: { grass: 10 } },
+    texture: 'equip_sheet_1',
+    frame: 7
   },
   {
     id: 'thunder_bead',
@@ -149,6 +167,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
     desc: '번개를 가두어 만든 구슬. 번개 속성 공격에 힘이 실린다.',
     grade: 'common',
     stats: { elementAtkBonus: { lightning: 10 } },
+    texture: 'equip_sheet_1',
+    frame: 8
   },
   {
     id: 'earth_drop',
@@ -156,6 +176,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
     desc: '대지의 힘이 응축된 방울. 땅 속성 공격이 묵직해진다.',
     grade: 'common',
     stats: { elementAtkBonus: { earth: 10 } },
+    texture: 'equip_sheet_1',
+    frame: 9
   },
   {
     id: 'worn_armor_shard',
@@ -163,6 +185,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
     desc: '오래된 갑옷의 파편. 투박하지만 몸을 지켜준다.',
     grade: 'common',
     stats: { maxHp: 8, def: 1 },
+    texture: 'equip_sheet_1',
+    frame: 10
   },
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -175,6 +199,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
     desc: '역전의 용사가 애용하던 팔찌. 공격과 방어 모두를 강화한다.',
     grade: 'uncommon',
     stats: { atk: 8, def: 3 },
+    texture: 'equip_sheet_1',
+    frame: 11
   },
   {
     id: 'magic_ring',
@@ -182,6 +208,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
     desc: '마법사의 기운이 깃든 반지. 급소 공격 확률과 위력이 높아진다.',
     grade: 'uncommon',
     stats: { crit: 5, critDmg: 0.10 },
+    texture: 'equip_sheet_1',
+    frame: 12
   },
   {
     id: 'life_amulet',
@@ -189,6 +217,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
     desc: '치유사가 정성껏 제작한 부적. 생명력과 방어력을 함께 높여준다.',
     grade: 'uncommon',
     stats: { maxHp: 20, def: 2 },
+    texture: 'equip_sheet_1',
+    frame: 13
   },
   {
     id: 'attack_crystal',
@@ -196,6 +226,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
     desc: '날카롭게 깎인 수정. 공격력과 치명타 확률을 동시에 강화한다.',
     grade: 'uncommon',
     stats: { atk: 6, crit: 5 },
+    texture: 'equip_sheet_1',
+    frame: 14
   },
   {
     id: 'element_guardian',
@@ -203,6 +235,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
     desc: '모든 속성의 균형을 담은 돌. 어떤 원소 공격도 일부 흘려낼 수 있다.',
     grade: 'uncommon',
     stats: { elementDefBonus: { water: 5, fire: 5, grass: 5, lightning: 5, earth: 5 } },
+    texture: 'equip_sheet_1',
+    frame: 15
   },
   {
     id: 'eagle_ring',
@@ -210,6 +244,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
     desc: '두 독수리가 새겨진 반지. 공격력과 생존력을 함께 높여준다.',
     grade: 'uncommon',
     stats: { atk: 10, maxHp: 10 },
+    texture: 'equip_sheet_2',
+    frame: 0
   },
   {
     id: 'reinforced_gem',
@@ -217,6 +253,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
     desc: '단련을 거듭한 보호의 보석. 방어력과 방어 카드의 효율을 높인다.',
     grade: 'uncommon',
     stats: { def: 5, shieldMult: 1.15 },
+    texture: 'equip_sheet_2',
+    frame: 1
   },
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -229,6 +267,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
     desc: '전설의 용사가 부러진 검 조각으로 만든 목걸이. 강력한 전투 능력을 부여한다.',
     grade: 'rare',
     stats: { atk: 15, crit: 8, critDmg: 0.15 },
+    texture: 'equip_sheet_2',
+    frame: 2
   },
   {
     id: 'undying_heart',
@@ -236,6 +276,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
     desc: '쉽게 죽지 않는 마수의 심장. 최대 HP와 방어력을 크게 높여준다.',
     grade: 'rare',
     stats: { maxHp: 30, def: 8 },
+    texture: 'equip_sheet_2',
+    frame: 3
   },
   {
     id: 'element_amplifier',
@@ -243,6 +285,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
     desc: '고대 연금술사가 만든 장치. 모든 속성 공격의 위력이 크게 상승한다.',
     grade: 'rare',
     stats: { elementAtkBonus: { water: 15, fire: 15, grass: 15, lightning: 15, earth: 15 } },
+    texture: 'equip_sheet_2',
+    frame: 4
   },
   {
     id: 'iron_wall_armor',
@@ -250,6 +294,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
     desc: '철옹성을 지키던 갑옷 파편. 방어력과 방어 카드 효율이 크게 높아진다.',
     grade: 'rare',
     stats: { def: 12, shieldMult: 1.30 },
+    texture: 'equip_sheet_2',
+    frame: 5
   },
   {
     id: 'lethal_claw',
@@ -257,6 +303,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
     desc: '최상위 포식자의 발톱. 공격력과 치명타 성능이 크게 강화된다.',
     grade: 'rare',
     stats: { atk: 8, crit: 15, critDmg: 0.35 },
+    texture: 'equip_sheet_2',
+    frame: 6
   },
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -274,6 +322,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
       value: 10,
       desc: '전투 승리 시 HP +10 회복',
     },
+    texture: 'equip_sheet_2',
+    frame: 7
   },
   {
     id: 'storm_eye',
@@ -286,6 +336,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
       value: 10,
       desc: '매 턴 종료 후 방어막 10 생성',
     },
+    texture: 'equip_sheet_2',
+    frame: 8
   },
   {
     id: 'element_dominator',
@@ -298,6 +350,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
       value: 0.2,
       desc: '속성 유불리 배율 +0.2 (1.5×→1.7×, 0.5×→0.3×)',
     },
+    texture: 'equip_sheet_2',
+    frame: 9
   },
   {
     id: 'card_master_ring',
@@ -310,6 +364,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
       value: 1,
       desc: '매 턴 카드 1장 추가 드로우',
     },
+    texture: 'equip_sheet_2',
+    frame: 10
   },
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -327,6 +383,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
       value: 15,
       desc: '전투 승리 시 최대 HP의 15% 회복',
     },
+    texture: 'equip_sheet_2',
+    frame: 11
   },
   {
     id: 'chaos_ring',
@@ -339,6 +397,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
       value: 15,
       desc: '매 턴 종료 후 방어막 15 생성',
     },
+    texture: 'equip_sheet_2',
+    frame: 12
   },
   {
     id: 'divine_blessing',
@@ -354,6 +414,8 @@ export const EQUIPMENT_DATA: EquipmentData[] = [
       value: 1,
       desc: '매 턴 카드 1장 추가 드로우',
     },
+    texture: 'equip_sheet_2',
+    frame: 13
   },
 ];
 

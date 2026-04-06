@@ -5,7 +5,7 @@ import { CharacterDef, WeaponType, CHAR_SPRITE_KEY, CHAR_FRAME_COUNT, WEAPON_COL
 import { CARD_DATA_LIST } from '@src/data/cardData';
 import type { CardData } from '@src/data/cardData';
 import Card, { CARD_WIDTH, CARD_HEIGHT } from '@src/objects/Card';
-import { getEquipmentById, EQUIP_GRADE_COLOR } from '@src/data/equipmentData';
+import { getEquipmentById, formatEquipStats, EQUIP_GRADE_COLOR, EQUIP_GRADE_LABEL } from '@src/data/equipmentData';
 
 interface DeckEntry { card: CardData; count: number; }
 
@@ -515,20 +515,75 @@ export default class MainScene extends Phaser.Scene {
   // 덱 패널
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /** 초기 덱 구성: 일반 공격×4 + 수비×3 + 포션×3 + 속성 1성 각×3 = 25장 */
+  /**
+   * 초기 덱 구성 — 캐릭터별 차별화 (총 17~18장)
+   * Normal: id25=공격, id26=수비, id29=포션
+   * Elemental 1성: id0=water, id5=fire, id10=grass, id15=lightning, id20=earth
+   */
   private buildInitialDeck() {
-    // Normal cards: id 25=공격, 26=수비, 29=포션
-    // Elemental 1-star: id 0=water, 5=fire, 10=grass, 15=lightning, 20=earth
-    this.playerDeck = [
-      { card: CARD_DATA_LIST[25], count: 4 },
-      { card: CARD_DATA_LIST[26], count: 3 },
-      { card: CARD_DATA_LIST[29], count: 3 },
-      { card: CARD_DATA_LIST[0],  count: 3 },
-      { card: CARD_DATA_LIST[5],  count: 3 },
-      { card: CARD_DATA_LIST[10], count: 3 },
-      { card: CARD_DATA_LIST[15], count: 3 },
-      { card: CARD_DATA_LIST[20], count: 3 },
-    ];
+    const weapon = this.character?.weapon ?? 'swordShield';
+
+    const decks: Record<string, Array<{ card: typeof CARD_DATA_LIST[0]; count: number }>> = {
+      // 수호자 — 방어/흙/물 특화 (탱커)
+      swordShield: [
+        { card: CARD_DATA_LIST[25], count: 3 },
+        { card: CARD_DATA_LIST[26], count: 3 },
+        { card: CARD_DATA_LIST[29], count: 2 },
+        { card: CARD_DATA_LIST[20], count: 4 }, // earth ×4
+        { card: CARD_DATA_LIST[0],  count: 3 }, // water ×3
+        { card: CARD_DATA_LIST[10], count: 2 }, // grass ×2
+        { card: CARD_DATA_LIST[5],  count: 1 }, // fire ×1
+        { card: CARD_DATA_LIST[15], count: 1 }, // lightning ×1
+      ],
+      // 레인저 — 번개/풀 특화 (속도·치명)
+      bow: [
+        { card: CARD_DATA_LIST[28], count: 5 }, // arrow (Ranger passive: 2x dmg)
+        { card: CARD_DATA_LIST[25], count: 2 }, // generic attack
+        { card: CARD_DATA_LIST[26], count: 2 }, // defense
+        { card: CARD_DATA_LIST[29], count: 2 }, // potion
+        { card: CARD_DATA_LIST[15], count: 3 }, // lightning ×3
+        { card: CARD_DATA_LIST[10], count: 3 }, // grass ×3
+        { card: CARD_DATA_LIST[0],  count: 1 }, // water ×1
+        { card: CARD_DATA_LIST[5],  count: 1 }, // fire ×1
+        { card: CARD_DATA_LIST[20], count: 1 }, // earth ×1
+      ],
+      // 버서커 — 불/번개 특화 (전면 공격)
+      greatsword: [
+        { card: CARD_DATA_LIST[25], count: 4 },
+        { card: CARD_DATA_LIST[26], count: 1 },
+        { card: CARD_DATA_LIST[29], count: 1 },
+        { card: CARD_DATA_LIST[5],  count: 4 }, // fire ×4
+        { card: CARD_DATA_LIST[15], count: 3 }, // lightning ×3
+        { card: CARD_DATA_LIST[0],  count: 2 }, // water ×2
+        { card: CARD_DATA_LIST[20], count: 2 }, // earth ×2
+        { card: CARD_DATA_LIST[10], count: 1 }, // grass ×1
+      ],
+      // 타이탄 — 흙/불 특화 (중갑 강타)
+      hammer: [
+        { card: CARD_DATA_LIST[25], count: 3 },
+        { card: CARD_DATA_LIST[26], count: 3 },
+        { card: CARD_DATA_LIST[29], count: 2 },
+        { card: CARD_DATA_LIST[20], count: 4 }, // earth ×4
+        { card: CARD_DATA_LIST[5],  count: 3 }, // fire ×3
+        { card: CARD_DATA_LIST[0],  count: 2 }, // water ×2
+        { card: CARD_DATA_LIST[10], count: 1 }, // grass ×1
+        { card: CARD_DATA_LIST[15], count: 1 }, // lightning ×1
+      ],
+      // 랜서 — 균형 덱 (만능 창병)
+      spear: [
+        { card: CARD_DATA_LIST[27], count: 5 }, // spear (Lancer passive: always crit)
+        { card: CARD_DATA_LIST[25], count: 2 }, // generic attack
+        { card: CARD_DATA_LIST[26], count: 2 }, // defense
+        { card: CARD_DATA_LIST[29], count: 2 }, // potion
+        { card: CARD_DATA_LIST[0],  count: 2 }, // water ×3
+        { card: CARD_DATA_LIST[5],  count: 2 }, // fire ×3
+        { card: CARD_DATA_LIST[10], count: 2 }, // grass ×2
+        { card: CARD_DATA_LIST[15], count: 2 }, // lightning ×2
+        { card: CARD_DATA_LIST[20], count: 1 }, // earth ×2
+      ],
+    };
+
+    this.playerDeck = decks[weapon] ?? decks['swordShield'];
   }
 
   /** 캐릭터 idle 애니메이션이 없으면 생성 (씬 전환 후 유실 방지) */
@@ -636,12 +691,19 @@ export default class MainScene extends Phaser.Scene {
     }
 
     // ── 장비 슬롯 오버레이 (이미지 좌측 상단 정사각형) ──────────────────────
+    // 장비 툴팁 오버레이
+    const equipTooltip = this.add.container(-1000, -1000).setDepth(2000).setVisible(false);
+    const equipTooltipBg = this.add.graphics();
+    const equipTooltipText = this.add.text(10, 10, '', {
+      fontFamily: 'SBAggroM', fontSize: '12px', color: '#eeeeee', lineSpacing: 4
+    });
+    equipTooltip.add([equipTooltipBg, equipTooltipText]);
+
     const SLOT_SIZE = 34;
     const SLOT_GAP  = 5;
     const SLOT_X0   = 10;
     const SLOT_Y0   = topY + 18;
     const equipG    = this.add.graphics();
-    const equipTexts: Phaser.GameObjects.Text[] = [];
 
     for (let s = 0; s < this.maxEquipSlots; s++) {
       const sx    = SLOT_X0 + s * (SLOT_SIZE + SLOT_GAP);
@@ -655,25 +717,48 @@ export default class MainScene extends Phaser.Scene {
       equipG.strokeRoundedRect(sx, sy, SLOT_SIZE, SLOT_SIZE, 5);
 
       if (empty) {
-        // 빈 슬롯: 중앙 + 기호
-        equipTexts.push(
+        this.deckWindowContainer.add(
           this.add.text(sx + SLOT_SIZE / 2, sy + SLOT_SIZE / 2, '+', {
             fontFamily: 'SBAggroM', fontSize: '16px', color: '#445566',
-          }).setOrigin(0.5),
+          }).setOrigin(0.5)
         );
       } else {
-        // 장비 있음: ID → 이름 조회 후 2글자 축약 + 등급색 표시
         const equip = getEquipmentById(item);
-        const abbr  = (equip?.name ?? item).replace(/[^가-힣a-zA-Z]/g, '').slice(0, 2);
-        const color = equip ? EQUIP_GRADE_COLOR[equip.grade] : '#d4af37';
-        equipTexts.push(
-          this.add.text(sx + SLOT_SIZE / 2, sy + SLOT_SIZE / 2, abbr, {
-            fontFamily: 'SBAggroB', fontSize: '11px', color,
-            wordWrap: { width: SLOT_SIZE - 4 }, align: 'center',
-          }).setOrigin(0.5),
-        );
+        if (equip) {
+          const sprite = this.add.sprite(sx + SLOT_SIZE / 2, sy + SLOT_SIZE / 2, equip.texture, equip.frame);
+          sprite.setDisplaySize(SLOT_SIZE - 4, SLOT_SIZE - 4);
+          this.deckWindowContainer.add(sprite);
+
+          // Interaction zone
+          const zone = this.add.zone(sx + SLOT_SIZE / 2, sy + SLOT_SIZE / 2, SLOT_SIZE, SLOT_SIZE);
+          zone.setInteractive({ useHandCursor: true });
+          this.deckWindowContainer.add(zone);
+
+          const gradeColor = EQUIP_GRADE_COLOR[equip.grade];
+          const gradeLabel = EQUIP_GRADE_LABEL[equip.grade];
+          let ttpText = `[${gradeLabel}] ${equip.name}\n\n${formatEquipStats(equip.stats)}`;
+          if (equip.special) ttpText += `\n★ ${equip.special.desc}`;
+
+          zone.on('pointerover', () => {
+            equipTooltipText.setText(ttpText);
+            equipTooltip.setVisible(true);
+            const b = equipTooltipText.getBounds();
+            equipTooltipBg.clear();
+            equipTooltipBg.fillStyle(0x0d1117, 0.95);
+            equipTooltipBg.lineStyle(1.5, parseInt(gradeColor.replace('#', '0x')), 1);
+            equipTooltipBg.fillRoundedRect(0, 0, b.width + 20, b.height + 20, 5);
+            equipTooltipBg.strokeRoundedRect(0, 0, b.width + 20, b.height + 20, 5);
+            
+            let tx = sx + SLOT_SIZE + 5;
+            let ty = sy;
+            equipTooltip.setPosition(tx, ty);
+          });
+          zone.on('pointerout', () => equipTooltip.setVisible(false));
+        }
       }
     }
+
+    this.deckWindowContainer.add(equipTooltip);
 
     // 캐릭터 이름
     const accentColor = char ? WEAPON_COLORS[char.weapon].accent : '#888888';
@@ -784,7 +869,7 @@ export default class MainScene extends Phaser.Scene {
       panelBg, panelBlockZone,
       handleGraphics, handleText, handleZone,
       leftTitleTxt, charNameTxt, statG, ...statTexts,
-      equipG, ...equipTexts,
+      equipG,
       deckTitleTxt, ...deckCards,
     ];
     if (charImg) items.push(charImg);
@@ -1271,7 +1356,9 @@ export default class MainScene extends Phaser.Scene {
       }
 
       // 덱 카드 변경 이벤트 처리
-      if (typeof result.swapFrom === 'string' && typeof result.swapTo === 'string') {
+      if (typeof result.swapCardId === 'number' && typeof result.swapTo === 'string') {
+        this.swapOneDeckCard(result.swapCardId, result.swapTo);
+      } else if (typeof result.swapFrom === 'string' && typeof result.swapTo === 'string') {
         this.swapDeckElement(result.swapFrom, result.swapTo);
       }
       if (typeof result.starUpElement === 'string') {
@@ -1318,6 +1405,22 @@ export default class MainScene extends Phaser.Scene {
   private readonly ELEM_OFFSET: Record<string, number> = {
     water: 0, fire: 5, grass: 10, lightning: 15, earth: 20,
   };
+
+  /** 카드 1장 속성 교환 (cardId로 지정한 단일 카드를 toElement 속성 동일 등급으로 교체) */
+  private swapOneDeckCard(cardId: number, toElement: string) {
+    const offTo = this.ELEM_OFFSET[toElement];
+    if (offTo == null) return;
+    for (const entry of this.playerDeck) {
+      if (entry.card.id === cardId) {
+        const stars = entry.card.stars;
+        if (stars >= 1 && stars <= 5) {
+          entry.card = CARD_DATA_LIST[offTo + stars - 1];
+        }
+        break;
+      }
+    }
+    this.refreshDeckPanel();
+  }
 
   /** 카드 속성 전체 교환 (swapFrom 속성의 모든 카드를 swapTo 속성으로) */
   private swapDeckElement(from: string, to: string) {

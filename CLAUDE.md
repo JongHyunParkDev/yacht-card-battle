@@ -32,8 +32,10 @@ Phaser Scenes are the primary unit of game state. The scene lifecycle:
 
 ```
 PreloadScene → IntroScene → CharacterSelectScene → MainScene
-                   ↕
-             SettingsScene / CardGalleryScene
+                   ↕                                   ↓
+             SettingsScene / CardGalleryScene    NodeEventScene → BattleScene
+                                                                      ↓
+                                                               (returns to MainScene)
 ```
 
 - **PreloadScene** (`src/scenes/PreloadScene.ts`): Asset loading (card-sprite.png 6×5 grid at 370px each, attr-sprite.png 7 icons at 128px, fonts)
@@ -42,15 +44,36 @@ PreloadScene → IntroScene → CharacterSelectScene → MainScene
   - 등록한 key를 해당 씬 코드 상단 주석이나 상수로 명시해 추적 가능하게 유지
 - **IntroScene** (`src/scenes/IntroScene.ts`): Main menu
 - **CharacterSelectScene** (`src/scenes/CharacterSelectScene.ts`): Pre-game character/weapon selection
-- **MainScene** (`src/scenes/MainScene.ts`): Core gameplay — procedural map, node navigation, deck panel, pause menu
+- **MainScene** (`src/scenes/MainScene.ts`): Core gameplay — procedural map, node navigation, deck panel, pause menu; owns `SaveState` interface and persists via Electron IPC
+- **NodeEventScene** (`src/scenes/NodeEventScene.ts`): Handles non-battle node interactions (treasure, enhancement, card swap, Indian poker, etc.); receives `NodeEventData` from MainScene
+- **BattleScene** (`src/scenes/BattleScene.ts`): Turn-based card battle; receives `BattleSceneData` from MainScene; returns result back to MainScene on win/lose
 - **CardGalleryScene** (`src/scenes/CardGalleryScene.ts`): Card catalog viewer
 - **SettingsScene** (`src/scenes/SettingsScene.ts`): Language/resolution/fullscreen settings
+
+### Scene Data Interfaces
+Scenes communicate by passing typed data objects via `scene.start('SceneName', data)`:
+- `BattleSceneData` — defined in `BattleScene.ts`: player stats, deck, character weapon, node info
+- `NodeEventData` — defined in `NodeEventScene.ts`: node type, player stats, equipment, gold, deck
 
 ### Card System
 - Card data defined in `src/data/cardData.ts` — 30 cards total: 5 elements × 5 star levels + 5 special cards
 - `src/objects/Card.ts` — Phaser container that renders a card (180×252px) with border, title, stars, sprite, stats
 - Elements: Water, Fire, Grass, Lightning, Earth — with rock-paper-scissors effectiveness (1.5× / 0.5× damage)
 - Starting deck: 25 cards (5 attribute × 5 copies of 1-star)
+
+### Equipment System
+- Defined in `src/data/equipmentData.ts`
+- 5 slot types: weapon, hat, armor + 2 relic slots
+- 5 grades: common(60%) / uncommon(25%) / rare(10%) / unique(4%) / legendary(1%)
+- Stats: atk, def, crit, critDmg, maxHp, cardMult, shieldMult, elementAtkBonus, elementDmgReduce
+- Special effects: `SpecialEffectType` — e.g. `shield_on_turn_end`, `heal_on_win`, `bonus_draw`, `element_amplify`, `lifesteal_pct`, `card_mult_on_crit`
+
+### Map Node Types
+Defined in `src/data/nodeTypes.ts` as `NODE_TYPE`. Nodes belong to one of three groups used for procedural generation:
+- **Group A (전투)**: SKULL(1) — 일반속성 랜덤 몹, SWORD(2) — 맵속성 랜덤 몹
+- **Group B (보상/이벤트)**: ENHANCE(3) — 캐릭터 강화, TREASURE(4) — 장비 뽑기, CARD_FLIP(5) — 도박
+- **Group C (카드 변형)**: CARD_SWAP(6), HEART(7) — HP -5 카드밸류 ×1.3, SHIELD_UP(8), STAR_UP(9), INDIAN_POKER(10)
+- **Boss nodes**: BOSS_WATER(11), BOSS_FIRE(12), BOSS_GRASS(13), BOSS_LIGHTNING(15), BOSS_EARTH(16), BOSS_FINAL(18)
 
 ### Procedural Map
 - Generated in `MainScene` using seeded RNG based on map hash
@@ -66,12 +89,12 @@ PreloadScene → IntroScene → CharacterSelectScene → MainScene
 - `electron/main.js` handles IPC for save/load game state and settings to disk
 - Planned: IndexedDB or SQLite for browser/mobile
 
-## Key Game Mechanics (from game.md)
+## Key Game Mechanics
 
-- **Type chart**: Water > Fire > Grass > Earth > Lightning > Water
+- **Type chart**: Water > Fire > Grass > Earth > Lightning > Water (1.5× advantage / 0.5× disadvantage) — implemented as `TYPE_BEATS` in `BattleScene.ts`
 - **Defense**: damage received = attack / defense (base 0, max 50)
 - **Critical**: base 0%, max 100%; base 1.5×, max 2.5×
-- **Battle turns**: max 20; draw 5 cards/turn with 1 reroll per card; 3+ same-element cards → bonus damage
+- **Battle turns**: max 20 (AI wins if not defeated); draw 5 cards/turn with 1 reroll per card; 3+ same-element cards → bonus damage
 - **PvP**: async — opponent's last registered deck/equipment fights via AI
 
 ## Platform Notes
