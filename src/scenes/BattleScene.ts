@@ -897,8 +897,6 @@ export default class BattleScene extends Phaser.Scene {
           const sameCards = cards.slice(0, step + 1).filter(c => c.id === card.id);
           const sameElems = cards.slice(0, step + 1).filter(c => c.element === card.element && card.element !== 'normal');
           let comboBonusMult = 1;
-          // Titan 패시브: 동일 카드 콤보 보너스 2배
-          if (this.data_.characterWeapon === 'hammer') comboBonusMult = 2;
 
           let bonusDmg = 0;
           if (sameCards.length === 2) bonusDmg = cardDmg * 0.5 * comboBonusMult;
@@ -925,13 +923,23 @@ export default class BattleScene extends Phaser.Scene {
 
           let finalDmg = cardDmg + bonusDmg + chainBonus;
 
-          // 6. 방어력 적용 (pierce 시 무시)
-          const isPierce = card.effects?.some(e => e.type === 'pierce');
+          // 6. 방어력 적용 (pierce 시 무시 / Titan 패시브: 항상 방어 무시)
+          const isPierce = card.effects?.some(e => e.type === 'pierce') || this.data_.characterWeapon === 'hammer';
           if (!isPierce) {
             const effectiveDef = Math.max(0, this.enemyDef - this.enemyArmorBreak);
             finalDmg = Math.max(1, Math.floor(finalDmg * (50 / (50 + effectiveDef))));
           } else {
             finalDmg = Math.max(1, Math.floor(finalDmg));
+          }
+
+          // Lancer 패시브: spear 카드 크리 + 방어 전 크리뎀 >= 적 현재 HP → 즉사
+          let isInstakill = false;
+          if (this.data_.characterWeapon === 'spear' && card.key === 'spear' && isCrit) {
+            const rawCritDmg = hitDmg * critDmgMult;
+            if (rawCritDmg >= this.enemyCurrentHp) {
+              finalDmg = this.enemyCurrentHp;
+              isInstakill = true;
+            }
           }
 
           // 7. 연출 → 데미지 적용
@@ -948,10 +956,11 @@ export default class BattleScene extends Phaser.Scene {
               });
             }
 
-            const critTxt   = isCrit ? ' ★CRIT!' : '';
-            const combotxt  = bonusDmg > 0 ? ' (콤보!)' : '';
-            const chaintxt  = chainBonus > 0 ? ' ⚡연쇄!' : '';
-            this.statusText.setText(`${this.data_.mobName}에게 ${Math.floor(finalDmg)}${critTxt}${combotxt}${chaintxt}`).setColor('#2ecc71');
+            const critTxt     = isCrit ? ' ★CRIT!' : '';
+            const combotxt    = bonusDmg > 0 ? ' (콤보!)' : '';
+            const chaintxt    = chainBonus > 0 ? ' ⚡연쇄!' : '';
+            const instakillTxt = isInstakill ? ' 💥즉사!' : '';
+            this.statusText.setText(`${this.data_.mobName}에게 ${Math.floor(finalDmg)}${critTxt}${instakillTxt}${combotxt}${chaintxt}`).setColor(isInstakill ? '#ff44ff' : '#2ecc71');
 
             // 8. 카드 효과 적용 (상태이상 부여)
             this.applyCardEffects(card.effects ?? []);

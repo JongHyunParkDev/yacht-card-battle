@@ -91,7 +91,7 @@ export default class NodeEventScene extends Phaser.Scene {
     else if (nodeType === NODE_TYPE.HEART)        this.createHeartEvent();
     else if (nodeType === NODE_TYPE.SHIELD_UP)    this.createShieldEvent();
     else if (nodeType === NODE_TYPE.STAR_UP)      this.createStarEvent();
-    else if (nodeType === NODE_TYPE.INDIAN_POKER) this.createIndianPokerEvent();
+    else if (nodeType === NODE_TYPE.INDIAN_POKER) this.createDeckPurificationEvent();
     else if (isBossType(nodeType))                this.createBossEvent();
     else                                          this.closeEvent({});
   }
@@ -739,162 +739,176 @@ export default class NodeEventScene extends Phaser.Scene {
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 6 — 대체 카드 (속성 교환)
+  // 6 — 속성 변환 (카드 선택 → 목표 속성 선택 → 변환)
   // ─────────────────────────────────────────────────────────────────────────────
 
   private createCardSwapEvent() {
-    const H = this.H;
-    const W = this.W;
-    const ELEMENTS: CardElement[] = ['water', 'fire', 'grass', 'lightning', 'earth'];
+    const H = this.H, W = this.W;
+    const ELEMENTS: CardElement[]           = ['water', 'fire', 'grass', 'lightning', 'earth'];
     const ELEM_OFFSET: Record<string, number> = { water:0, fire:5, grass:10, lightning:15, earth:20 };
+    const ATTR_IDX:   Record<string, number>  = { water:0, fire:1, grass:2, lightning:3, earth:4 };
+    // 속성별 강조색 (숫자 → Phaser 색, 문자열 → CSS)
+    const ECOL: Record<string, { n: number; s: string }> = {
+      water:     { n: 0x56b4f7, s: '#56b4f7' },
+      fire:      { n: 0xff6b35, s: '#ff6b35' },
+      grass:     { n: 0x4caf50, s: '#4caf50' },
+      lightning: { n: 0xffeb3b, s: '#ffeb3b' },
+      earth:     { n: 0xc8906a, s: '#c8906a' },
+    };
 
-    const title   = this.makeHeader('row1_0', i18n.t('swapTitle'), -H * 0.38);
-    const desc    = this.makeBody('교환할 카드 1장을 선택하세요.\n선택한 카드가 랜덤 속성으로 바뀝니다.', -H * 0.29);
+    // ── Step 1: 교환할 카드 선택 ───────────────────────────────────────────────
+    const title   = this.makeHeader('row1_0', '속성 변환', -H * 0.38);
+    const desc    = this.makeBody('교환할 속성 카드 1장을 선택하세요.\n어떤 속성으로 변환할지 직접 고를 수 있습니다.', -H * 0.29);
     const divider = this.makeDivider(-H * 0.21);
     this.root.add([title, desc, divider]);
 
-    // 속성 카드만 필터링 (일반 카드 제외)
     const elementalCards = this.data_.deck.filter(e => {
       const cd = CARD_DATA_LIST.find(c => c.id === e.cardId);
       return cd && cd.element !== 'normal';
     });
 
     if (elementalCards.length === 0) {
-      const noneTxt = this.makeBody('교환할 수 있는 속성 카드가 없습니다.', H * 0.02);
-      const backBtn = this.makeButton(0, H * 0.22, i18n.t('confirm') || '확인', 0x333333, () => {
-        this.closeEvent({});
-      }, Math.round(W * 0.22), 50);
-      this.root.add([noneTxt, backBtn]);
+      this.root.add([
+        this.makeBody('교환할 수 있는 속성 카드가 없습니다.', H * 0.02),
+        this.makeButton(0, H * 0.22, '확인', 0x333333, () => this.closeEvent({}), Math.round(W * 0.22), 50),
+      ]);
       return;
     }
 
-    // 카드 그리드 표시 (multGain=1.0 → 라벨 없음)
     this.createScrollableCardGrid(elementalCards, 1.0, (entry, cardData) => {
-      // 현재 속성을 제외한 랜덤 속성 선택
-      const others  = ELEMENTS.filter(e => e !== cardData.element);
-      const toElem  = others[Math.floor(Math.random() * others.length)] as CardElement;
-      const off     = ELEM_OFFSET[toElem];
-      const toCard  = off != null ? CARD_DATA_LIST[off + cardData.stars - 1] : null;
+      // ── Step 2: 목표 속성 선택 ──────────────────────────────────────────────
+      this.tweens.add({ targets: this.root, alpha: 0, duration: 180, onComplete: () => {
+        this.root.removeAll(true);
+        this.root.setAlpha(1);
 
-      this.tweens.add({
-        targets: this.root, alpha: 0, duration: 180,
-        onComplete: () => {
-          this.root.removeAll(true);
-          this.root.setAlpha(1);
+        this.root.add([
+          this.makeHeader('row1_0', '변환할 속성 선택', -H * 0.38),
+          this.add.text(0, -H * 0.27, `[${i18n.t(cardData.nameKey)}]를 어떤 속성으로?`, {
+            fontFamily: FONT_B, fontSize: '20px', color: '#f39c12', align: 'center',
+          }).setOrigin(0.5),
+          this.makeDivider(-H * 0.19),
+        ]);
 
-          const resTitle = this.makeHeader('row1_0', i18n.t('swapResultTitle') || '교환 결과', -H * 0.38);
-          const resTxt   = this.add.text(0, -H * 0.26,
-            `[${i18n.t(cardData.nameKey)}] 카드가\n[${this.elementName(toElem)}] 속성으로 교환되었습니다!`, {
-            fontFamily: FONT_B, fontSize: '22px', color: '#f39c12', align: 'center',
+        const targets = ELEMENTS.filter(e => e !== cardData.element);
+        const BW = Math.round(Math.min(W * 0.15, 100));
+        const BH = 110;
+        const totalW = targets.length * (BW + 16) - 16;
+        const startX = -totalW / 2 + BW / 2;
+
+        targets.forEach((toElem, i) => {
+          const col    = ECOL[toElem];
+          const off    = ELEM_OFFSET[toElem];
+          const toCard = off != null ? CARD_DATA_LIST[off + cardData.stars - 1] : null;
+          const bx     = startX + i * (BW + 16);
+          const by     = H * 0.02;
+
+          const cont = this.add.container(bx, by);
+          const bg   = this.add.graphics();
+          bg.fillStyle(col.n, 0.12);
+          bg.lineStyle(2, col.n, 0.7);
+          bg.fillRoundedRect(-BW / 2, -BH / 2, BW, BH, 10);
+          bg.strokeRoundedRect(-BW / 2, -BH / 2, BW, BH, 10);
+          const icon = this.add.image(0, -18, 'attr_icons', `attr_${ATTR_IDX[toElem]}`);
+          icon.setDisplaySize(40, 40);
+          const lbl = this.add.text(0, 32, this.elementName(toElem), {
+            fontFamily: FONT_B, fontSize: '14px', color: col.s,
           }).setOrigin(0.5);
 
-          const group: Phaser.GameObjects.GameObject[] = [resTitle, resTxt];
-
-          // 교환 전/후 카드 시각화
-          if (toCard) {
-            const SC  = 0.90;
-            const sw  = CARD_WIDTH  * SC;
-            const sh  = CARD_HEIGHT * SC;
-            const gx  = Math.floor(W * 0.22);
-            const fromCard = new Card(this, -gx - sw / 2, -H * 0.08 - sh / 2, cardData).setScale(SC);
-            const toCardObj= new Card(this,  gx - sw / 2, -H * 0.08 - sh / 2, toCard).setScale(SC);
-            const arrow    = this.add.text(0, -H * 0.08, '▶', {
-              fontFamily: FONT_B, fontSize: '40px', color: '#ffffff',
-            }).setOrigin(0.5);
-            group.push(fromCard, arrow, toCardObj);
-          }
-
-          const confirmBtn = this.makeButton(0, H * 0.34, i18n.t('confirm') || '확인', 0x27ae60, () => {
-            this.closeEvent({ swapCardId: entry.cardId, swapTo: toElem });
-          }, Math.round(W * 0.3), 60);
-          group.push(confirmBtn);
-          this.root.add(group);
-        },
-      });
+          cont.add([bg, icon, lbl]);
+          cont.setSize(BW, BH);
+          cont.setInteractive({ useHandCursor: true });
+          cont.on('pointerover', () => this.tweens.add({ targets: cont, scaleX: 1.08, scaleY: 1.08, duration: 70 }));
+          cont.on('pointerout',  () => this.tweens.add({ targets: cont, scaleX: 1,    scaleY: 1,    duration: 70 }));
+          cont.on('pointerdown', () => {
+            // ── Step 3: 결과 확인 ──────────────────────────────────────────
+            this.tweens.add({ targets: this.root, alpha: 0, duration: 180, onComplete: () => {
+              this.root.removeAll(true);
+              this.root.setAlpha(1);
+              const group: Phaser.GameObjects.GameObject[] = [
+                this.makeHeader('row1_0', '속성 변환 완료!', -H * 0.38),
+                this.add.text(0, -H * 0.27,
+                  `${i18n.t(cardData.nameKey)}  →  ${toCard ? i18n.t(toCard.nameKey) : this.elementName(toElem)}`, {
+                  fontFamily: FONT_B, fontSize: '20px', color: '#f5cc4a', align: 'center',
+                }).setOrigin(0.5),
+              ];
+              if (toCard) {
+                const SC = 0.88, sw = CARD_WIDTH * SC, sh = CARD_HEIGHT * SC, gx = W * 0.22;
+                group.push(
+                  new Card(this, -gx - sw / 2, -H * 0.07 - sh / 2, cardData).setScale(SC),
+                  this.add.text(0, -H * 0.07, '▶', { fontFamily: FONT_B, fontSize: '40px', color: '#fff' }).setOrigin(0.5),
+                  new Card(this,  gx - sw / 2, -H * 0.07 - sh / 2, toCard).setScale(SC),
+                );
+              }
+              group.push(this.makeButton(0, H * 0.34, '확인', 0x27ae60, () => {
+                this.closeEvent({ swapCardId: entry.cardId, swapTo: toElem });
+              }, Math.round(W * 0.28), 60));
+              this.root.add(group);
+            }});
+          });
+          this.root.add(cont);
+        });
+      }});
     }, '#f39c12');
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 7 — 하트 카드 (HP -5, 카드 밸류 ×1.3)
+  // 7 — 하트 카드 (생명력 제단: 희생 티어 선택)
   // ─────────────────────────────────────────────────────────────────────────────
 
   private createHeartEvent() {
     const H = this.H;
     const W = this.W;
-    const { playerHp } = this.data_;
-    const canAccept    = playerHp > 5;
+    const { playerHp, playerMaxHp } = this.data_;
 
-    const title   = this.makeHeader('row1_1', i18n.t('heartTitle'), -H * 0.32);
-    const divider = this.makeDivider(-H * 0.22);
-    const desc    = this.makeBody(i18n.f('heartDesc', { hp: playerHp }), -H * 0.10);
-
-    const warning = canAccept ? null : this.add.text(0, H * 0.10, i18n.t('heartWarning'), {
-      fontFamily: FONT_M, fontSize: '16px', color: '#e74c3c',
+    const title   = this.makeHeader('row1_1', '생명력 제단', -H * 0.40);
+    const divider = this.makeDivider(-H * 0.32);
+    const hpTxt   = this.add.text(0, -H * 0.25, `현재 HP: ${playerHp} / ${playerMaxHp}`, {
+      fontFamily: FONT_M, fontSize: '18px', color: '#aaaaaa',
     }).setOrigin(0.5);
+    const desc = this.add.text(0, -H * 0.18, '생명력을 바쳐 카드 밸류를 강화합니다.\n더 많이 희생할수록 더 큰 강화를 얻습니다.', {
+      fontFamily: FONT_M, fontSize: '16px', color: '#cccccc', align: 'center', lineSpacing: 4,
+    }).setOrigin(0.5);
+    this.root.add([title, divider, hpTxt, desc]);
 
-    const acceptBtn = this.makeButton(0, H * 0.25, '생명력 바치기 (-5 HP)', 0x8b0000, () => {
-      this.tweens.add({
-        targets: this.root, alpha: 0, duration: 200,
-        onComplete: () => {
+    // 희생 티어 정의
+    const tiers = [
+      { hpCost: 5,  mult: 1.2, label: '소 희생  −5 HP  →  ×1.2', color: 0x8b4513 },
+      { hpCost: 10, mult: 1.5, label: '중 희생  −10 HP  →  ×1.5', color: 0x8b0000 },
+      { hpCost: 20, mult: 2.0, label: '대 희생  −20 HP  →  ×2.0', color: 0x4a0000 },
+    ];
+
+    const BW = Math.round(W * 0.40);
+    const BH = 52;
+    const startY = -H * 0.06;
+    const gap = H * 0.11;
+
+    tiers.forEach((tier, i) => {
+      const canUse = playerHp > tier.hpCost;
+      const btn = this.makeButton(0, startY + i * gap, tier.label, tier.color, () => {
+        this.tweens.add({ targets: this.root, alpha: 0, duration: 180, onComplete: () => {
           this.root.removeAll(true);
           this.root.setAlpha(1);
-          const title2 = this.makeHeader('row1_1', i18n.t('heartSelectCard') || '강화할 카드를 선택하세요', -H * 0.35);
-          const div2   = this.makeDivider(-H * 0.28, W * 0.7);
-          const hpNote = this.add.text(0, -H * 0.22, '⚠ HP -5 / 카드 효율 ×1.3', {
-            fontFamily: FONT_M, fontSize: '15px', color: '#e67e22', align: 'center'
+          const resTitle = this.makeHeader('row1_1', '제단 강화 완료!', -H * 0.20);
+          const resDesc  = this.add.text(0, -H * 0.04,
+            `HP  ${playerHp}  →  ${Math.max(1, playerHp - tier.hpCost)}\n모든 카드 밸류  ×${tier.mult.toFixed(1)}`, {
+            fontFamily: FONT_B, fontSize: '28px', color: '#2ecc71',
+            align: 'center', lineSpacing: 10,
           }).setOrigin(0.5);
-          this.root.add([title2, div2, hpNote]);
+          const confirmBtn = this.makeButton(0, H * 0.22, '확인', 0x1a5c1a, () => {
+            this.closeEvent({ hpDelta: -tier.hpCost, cardValueMultiplier: tier.mult });
+          }, Math.round(W * 0.28), 56);
+          this.root.add([resTitle, resDesc, confirmBtn]);
+        }});
+      }, BW, BH);
+      if (!canUse) btn.setAlpha(0.35).disableInteractive();
+      this.root.add(btn);
+    });
 
-          // 모든 카드를 선택 대상으로 제공 (스크롤 가능)
-          this.createScrollableCardGrid(this.data_.deck, 1.3, (entry, cardData, currentMult, nextMult) => {
-            // 클릭 시 행위
-            this.tweens.add({
-              targets: this.root, alpha: 0, duration: 200,
-              onComplete: () => {
-                this.root.removeAll(true);
-                this.root.setAlpha(1);
-                const resTitle = this.makeHeader('row1_1', '심장 강화 완료!', -H * 0.35);
-                const SC2 = 1.6;
-                const previewCard = new Card(this, -(CARD_WIDTH * SC2) / 2, -H * 0.20, cardData);
-                previewCard.setScale(SC2);
-                const resDesc = this.add.text(0, H * 0.18,
-                  `[${i18n.t(cardData.nameKey)}]\n×${currentMult.toFixed(1)}  →  ×${nextMult.toFixed(1)}\n(HP -5)`, {
-                  fontFamily: FONT_B, fontSize: '22px', color: '#2ecc71', align: 'center'
-                }).setOrigin(0.5);
-                const confirmBtn = this.makeButton(0, H * 0.32, i18n.t('confirm') || '확인', 0x1a5c1a, () => {
-                  this.closeEvent({ accepted: true, hpDelta: -5, upgradeCardId: entry.cardId, upgradeCardMult: 1.3 });
-                }, Math.round(W * 0.28), 56);
-                this.root.add([resTitle, previewCard, resDesc, confirmBtn]);
-              }
-            });
-          }, '#ff5555');
-        }
-      });
-    }, Math.round(W * 0.32), 54);
-
-    const refuseBtn = this.makeButton(0, H * 0.37, i18n.t('heartRefuse'), 0x5c1a1a, () => {
-      this.tweens.add({
-        targets: this.root, alpha: 0, duration: 180,
-        onComplete: () => {
-          this.root.removeAll(true);
-          this.root.setAlpha(1);
-          const resTitle = this.makeHeader('row1_1', '제단을 떠남', -H * 0.1);
-          const resMsg = this.add.text(0, H * 0.05, '아무런 대가도 치르지 않고\n제단을 뒤로하고 떠납니다.', {
-            fontFamily: FONT_M, fontSize: '18px', color: '#aaaaaa', align: 'center'
-          }).setOrigin(0.5);
-          const confirmBtn = this.makeButton(0, H * 0.25, i18n.t('confirm') || '확인', 0x333333, () => {
-             this.closeEvent({ accepted: false });
-          }, 140, 50);
-          this.root.add([resTitle, resMsg, confirmBtn]);
-        }
-      });
-    }, Math.round(W * 0.24), 56);
-
-    if (!canAccept) acceptBtn.setAlpha(0.35).disableInteractive();
-
-    const items: Phaser.GameObjects.GameObject[] = [title, divider, desc, acceptBtn, refuseBtn];
-    if (warning) items.push(warning);
-    this.root.add(items);
+    // 거절 버튼
+    const refuseBtn = this.makeButton(0, startY + tiers.length * gap, '제단을 떠난다', 0x333333, () => {
+      this.closeEvent({});
+    }, Math.round(W * 0.28), 46);
+    this.root.add(refuseBtn);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1212,7 +1226,7 @@ export default class NodeEventScene extends Phaser.Scene {
       this.isDragging = false;
     };
     const onMove = (pointer: Phaser.Input.Pointer) => {
-      if (!pointer.isDown) return;
+      if (!pointer.isDown || !listCont.active) return;
       const dx = pointer.x - this.startX;
       if (Math.abs(dx) > 10) this.isDragging = true;
       if (this.isDragging) {
@@ -1223,6 +1237,7 @@ export default class NodeEventScene extends Phaser.Scene {
       }
     };
     const onUp = () => {
+      if (!listCont.active) return;
       if (listCont.x > 0)
         this.tweens.add({ targets: listCont, x: 0, duration: 250, ease: 'Back.easeOut' });
       else if (listCont.x < -this.maxScrollX)
@@ -1519,12 +1534,28 @@ export default class NodeEventScene extends Phaser.Scene {
       myLbl.setText(i18n.t('myCardRevealed'));
       this.tweens.add({ targets: myCardTxt, scaleX: 1.2, scaleY: 1.2, duration: 150, yoyo: true });
 
+      // 5성 배팅포기 → 즉시 이벤트 종료 (0장, 규칙 위반 패널티)
       if (cards.playerStars === 5) {
-        statusTxt.setText(i18n.t('pokerFiveStarFold')).setColor('#e74c3c');
-        this.time.delayedCall(900, () => {
-          myCardTxt.setText('?').setColor('#6699cc'); myLbl.setText(i18n.t('myCardHidden'));
-          locked = false; betBtn.setAlpha(1); foldBtn.setAlpha(1);
-          statusTxt.setText(i18n.t('betOrFold')).setColor('#cccccc');
+        gameEnded = true;
+        statusTxt.setText('5성 카드를 손에 쥐고 포기...\n이벤트가 즉시 종료됩니다.').setColor('#e74c3c');
+        betBtn.setVisible(false); foldBtn.setVisible(false);
+        this.time.delayedCall(1400, () => {
+          this.tweens.add({
+            targets: this.root, alpha: 0, duration: 180,
+            onComplete: () => {
+              this.root.removeAll(true);
+              this.root.setAlpha(1);
+              const resTitle = this.makeHeader('row1_4', '포커 강제 종료', -H * 0.15);
+              const resMsg   = this.add.text(0, 0,
+                '5성 카드를 들고 배팅을 포기하면\n이벤트가 즉시 종료됩니다.\n보상을 받지 못합니다.', {
+                fontFamily: FONT_M, fontSize: '18px', color: '#e74c3c', align: 'center',
+              }).setOrigin(0.5);
+              const confirmBtn = this.makeButton(0, H * 0.22, i18n.t('confirm') || '확인', 0x3a1a1a, () => {
+                this.closeEvent({ pokerCard: 0 });
+              }, 140, 50);
+              this.root.add([resTitle, resMsg, confirmBtn]);
+            },
+          });
         });
         return;
       }
@@ -1548,6 +1579,110 @@ export default class NodeEventScene extends Phaser.Scene {
       statusTxt, winLbl,
       betBtn, foldBtn, takeNowBtn, continueBtn,
     ]);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 10 — 덱 정화 (카드 1장 제거 + 보너스 1성 강화)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  private createDeckPurificationEvent() {
+    const H = this.H, W = this.W;
+    const ELEM_OFFSET: Record<string, number> = { water:0, fire:5, grass:10, lightning:15, earth:20 };
+
+    const title   = this.makeHeader('row1_4', '덱 정화', -H * 0.38);
+    const divider = this.makeDivider(-H * 0.30, W * 0.7);
+    const desc    = this.add.text(0, -H * 0.23, '제거할 카드 1장을 선택하세요.\n카드를 제거하면 덱이 강해집니다.', {
+      fontFamily: FONT_M, fontSize: '17px', color: '#cccccc', align: 'center', lineSpacing: 4,
+    }).setOrigin(0.5);
+    this.root.add([title, divider, desc]);
+
+    const allCards = this.data_.deck;
+    if (allCards.length === 0) {
+      this.root.add([
+        this.makeBody('제거할 카드가 없습니다.', H * 0.02),
+        this.makeButton(0, H * 0.22, '확인', 0x333333, () => this.closeEvent({}), Math.round(W * 0.22), 50),
+      ]);
+      return;
+    }
+
+    // Step 1: 제거할 카드 선택
+    this.createScrollableCardGrid(allCards, 1.0, (entry, cardData) => {
+      const removedCardId = entry.cardId;
+
+      this.tweens.add({ targets: this.root, alpha: 0, duration: 180, onComplete: () => {
+        this.root.removeAll(true);
+        this.root.setAlpha(1);
+
+        // Step 2: 보너스 강화 카드 선택 (5성 미만 속성 카드, 제거된 카드 제외)
+        const upgradeable = allCards.filter(e => {
+          if (e.cardId === removedCardId) return false;
+          const cd = CARD_DATA_LIST.find(c => c.id === e.cardId);
+          return cd && cd.element !== 'normal' && cd.stars < 5 && cd.element in ELEM_OFFSET;
+        });
+
+        this.root.add([
+          this.makeHeader('row1_4', '보너스: 카드 강화', -H * 0.38),
+          this.makeDivider(-H * 0.30, W * 0.7),
+          this.add.text(0, -H * 0.23,
+            `[${i18n.t(cardData.nameKey)}] 제거 완료!\n강화할 카드를 선택하거나 건너뛰세요.`, {
+            fontFamily: FONT_M, fontSize: '16px', color: '#f5cc4a', align: 'center', lineSpacing: 4,
+          }).setOrigin(0.5),
+        ]);
+
+        const skipBtn = this.makeButton(0, H * 0.36, '건너뛰기', 0x333333, () => {
+          this.closeEvent({ removeCardId: removedCardId });
+        }, Math.round(W * 0.24), 46);
+        this.root.add(skipBtn);
+
+        if (upgradeable.length === 0) {
+          const noneTxt = this.add.text(0, H * 0.04, '강화할 수 있는 카드가 없습니다.', {
+            fontFamily: FONT_M, fontSize: '16px', color: '#aaaaaa',
+          }).setOrigin(0.5);
+          this.root.add(noneTxt);
+          return;
+        }
+
+        this.createScrollableCardGrid(upgradeable, 1.0, (upgradeEntry, upgradeCard) => {
+          // Step 3: 결과 화면
+          this.tweens.add({ targets: this.root, alpha: 0, duration: 180, onComplete: () => {
+            this.root.removeAll(true);
+            this.root.setAlpha(1);
+
+            const off = ELEM_OFFSET[upgradeCard.element];
+            const upgradedCard = off != null ? CARD_DATA_LIST[off + upgradeCard.stars] : null;
+
+            const group: Phaser.GameObjects.GameObject[] = [
+              this.makeHeader('row1_4', '덱 정화 완료!', -H * 0.32),
+            ];
+
+            if (upgradedCard) {
+              const SC = 0.82, sw = CARD_WIDTH * SC;
+              group.push(
+                this.add.text(-sw * 1.2, -H * 0.17, '제거', {
+                  fontFamily: FONT_M, fontSize: '13px', color: '#e74c3c',
+                }).setOrigin(0.5),
+                this.add.text(sw * 0.8, -H * 0.17, '강화', {
+                  fontFamily: FONT_M, fontSize: '13px', color: '#2ecc71',
+                }).setOrigin(0.5),
+                new Card(this, -sw * 1.2 - sw / 2, -H * 0.12 - (CARD_HEIGHT * SC) / 2, cardData).setScale(SC),
+                this.add.text(0, -H * 0.08, '▶', { fontFamily: FONT_B, fontSize: '36px', color: '#fff' }).setOrigin(0.5),
+                new Card(this, sw * 0.8 - sw / 2, -H * 0.12 - (CARD_HEIGHT * SC) / 2, upgradedCard).setScale(SC),
+              );
+            }
+
+            group.push(
+              this.add.text(0, H * 0.22, '카드 제거 + 강화 완료!', {
+                fontFamily: FONT_B, fontSize: '20px', color: '#2ecc71',
+              }).setOrigin(0.5),
+              this.makeButton(0, H * 0.35, '확인', 0x27ae60, () => {
+                this.closeEvent({ removeCardId: removedCardId, upgradeStarCardId: upgradeEntry.cardId });
+              }, Math.round(W * 0.28), 56),
+            );
+            this.root.add(group);
+          }});
+        }, '#2ecc71');
+      }});
+    }, '#e74c3c');
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

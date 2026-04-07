@@ -1380,6 +1380,9 @@ export default class MainScene extends Phaser.Scene {
         const cid = result.upgradeCardId as number;
         this.cardMultipliers[cid] = (this.cardMultipliers[cid] || 1.0) * (result.upgradeCardMult as number);
       }
+      if (typeof result.removeCardId === 'number') {
+        this.removeOneDeckCard(result.removeCardId);
+      }
 
       // 게임 오버 체크
       if (this.playerHp <= 0) {
@@ -1469,6 +1472,18 @@ export default class MainScene extends Phaser.Scene {
     const existing = this.playerDeck.find(e => e.card.id === newCard.id);
     if (existing) existing.count++;
     else this.playerDeck.push({ card: newCard, count: 1 });
+    this.refreshDeckPanel();
+  }
+
+  /** 카드 1장 제거 (count > 1이면 count--, count === 1이면 항목 삭제) */
+  private removeOneDeckCard(cardId: number) {
+    const idx = this.playerDeck.findIndex(e => e.card.id === cardId);
+    if (idx === -1) return;
+    if (this.playerDeck[idx].count > 1) {
+      this.playerDeck[idx].count--;
+    } else {
+      this.playerDeck.splice(idx, 1);
+    }
     this.refreshDeckPanel();
   }
 
