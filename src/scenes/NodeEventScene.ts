@@ -912,62 +912,105 @@ export default class NodeEventScene extends Phaser.Scene {
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 8 — 방어 카드 (쉴드량 ×1.2)
+  // 8 — 방어 카드 (쉴드 강화 OR HP 회복 선택)
   // ─────────────────────────────────────────────────────────────────────────────
 
   private createShieldEvent() {
     const H = this.H;
     const W = this.W;
+    const { playerHp, playerMaxHp } = this.data_;
+    const healAmt = Math.floor(playerMaxHp * 0.28);
 
-    const title   = this.makeHeader('row1_2', i18n.t('shieldTitle'), -H * 0.35);
-    const divider = this.makeDivider(-H * 0.28, W * 0.7);
-    const desc    = this.add.text(0, -H * 0.21, '강화할 방어 카드를 선택하세요 (드래그하여 탐색)\n효과가 ×1.5 증가합니다.', {
-      fontFamily: FONT_M, fontSize: '18px', color: '#dddddd', align: 'center'
-    }).setOrigin(0.5);
-
-    this.root.add([title, divider, desc]);
-
-    // 덱에서 방어(defense, shield) 카드 필터링
-    const deckList = this.data_.deck;
-    const shieldCards = deckList.filter(e => {
+    // 덱에서 방어 카드 필터링
+    const shieldCards = this.data_.deck.filter(e => {
       const cd = CARD_DATA_LIST.find(c => c.id === e.cardId);
       return cd && (cd.key === 'defense' || cd.key === 'shield' || cd.effects?.some(eff => eff.type === 'shield_add'));
     });
+    const hasShieldCards = shieldCards.length > 0;
+    const alreadyFull = playerHp >= playerMaxHp;
 
-    if (shieldCards.length === 0) {
-      const noneTxt = this.add.text(0, 0, '강화할 수 있는 방어 카드가 없습니다.', {
-        fontFamily: FONT_B, fontSize: '18px', color: '#aaaaaa'
-      }).setOrigin(0.5);
-      const backBtn = this.makeButton(0, H * 0.2, i18n.t('confirm') || '확인', 0x333333, () => {
+    const title   = this.makeHeader('row1_2', '회복의 샘', -H * 0.38);
+    const divider = this.makeDivider(-H * 0.30, W * 0.7);
+    const desc    = this.add.text(0, -H * 0.22,
+      '두 가지 중 하나를 선택하세요.', {
+      fontFamily: FONT_M, fontSize: '17px', color: '#cccccc', align: 'center',
+    }).setOrigin(0.5);
+    this.root.add([title, divider, desc]);
+
+    // ── 선택지 A: HP 회복 ──────────────────────────────────────────────────────
+    const hpLabel = alreadyFull
+      ? `HP 회복  (이미 최대치)`
+      : `HP 회복  (+${healAmt}  ${playerHp} → ${Math.min(playerMaxHp, playerHp + healAmt)})`;
+
+    const healBtn = this.makeButton(-W * 0.18, -H * 0.06, hpLabel, 0x1a5c1a, () => {
+      this.tweens.add({ targets: this.root, alpha: 0, duration: 180, onComplete: () => {
+        this.root.removeAll(true);
+        this.root.setAlpha(1);
+        this.root.add([
+          this.makeHeader('row1_2', 'HP 회복!', -H * 0.20),
+          this.add.text(0, -H * 0.04,
+            `HP  ${playerHp}  →  ${Math.min(playerMaxHp, playerHp + healAmt)}`, {
+            fontFamily: FONT_B, fontSize: '30px', color: '#2ecc71', align: 'center',
+          }).setOrigin(0.5),
+          this.makeButton(0, H * 0.20, '확인', 0x1a5c1a, () => {
+            this.closeEvent({ hpDelta: healAmt });
+          }, Math.round(W * 0.26), 54),
+        ]);
+      }});
+    }, Math.round(W * 0.30), 60);
+    if (alreadyFull) healBtn.setAlpha(0.4).disableInteractive();
+
+    // ── 선택지 B: 방어 카드 강화 ──────────────────────────────────────────────
+    const shieldBtnLabel = hasShieldCards
+      ? '방어 카드 강화  (×1.5)'
+      : '방어 카드 강화  (덱에 방어 카드 없음)';
+
+    const shieldBtn = this.makeButton(W * 0.18, -H * 0.06, shieldBtnLabel, 0x1a3a6c, () => {
+      this.tweens.add({ targets: this.root, alpha: 0, duration: 180, onComplete: () => {
+        this.root.removeAll(true);
+        this.root.setAlpha(1);
+
+        this.root.add([
+          this.makeHeader('row1_2', '방어막 강화', -H * 0.38),
+          this.makeDivider(-H * 0.30, W * 0.7),
+          this.add.text(0, -H * 0.23, '강화할 방어 카드를 선택하세요.\n효과가 ×1.5 증가합니다.', {
+            fontFamily: FONT_M, fontSize: '17px', color: '#dddddd', align: 'center',
+          }).setOrigin(0.5),
+        ]);
+
+        this.createScrollableCardGrid(shieldCards, 1.5, (entry, cardData, curM, nextM) => {
+          this.tweens.add({ targets: this.root, alpha: 0, duration: 200, onComplete: () => {
+            this.root.removeAll(true);
+            this.root.setAlpha(1);
+            const SC2 = 1.6;
+            const previewCard = new Card(this, -(CARD_WIDTH * SC2) / 2, -H * 0.20, cardData);
+            previewCard.setScale(SC2);
+            this.root.add([
+              this.makeHeader('row1_2', '방어막 강화!', -H * 0.35),
+              previewCard,
+              this.add.text(0, H * 0.18,
+                `[${i18n.t(cardData.nameKey)}]\n×${curM.toFixed(1)}  →  ×${nextM.toFixed(1)}`, {
+                fontFamily: FONT_B, fontSize: '24px', color: '#56b4f7', align: 'center',
+              }).setOrigin(0.5),
+              this.makeButton(0, H * 0.32, '확인', 0x1a3a6c, () => {
+                this.closeEvent({ upgradeCardId: entry.cardId, upgradeCardMult: 1.5 });
+              }, Math.round(W * 0.28), 56),
+            ]);
+          }});
+        }, '#56b4f7');
+      }});
+    }, Math.round(W * 0.30), 60);
+    if (!hasShieldCards) shieldBtn.setAlpha(0.4).disableInteractive();
+
+    this.root.add([healBtn, shieldBtn]);
+
+    // 둘 다 불가 시 안내
+    if (alreadyFull && !hasShieldCards) {
+      const noneBtn = this.makeButton(0, H * 0.12, '이용할 수 없습니다  (통과)', 0x333333, () => {
         this.closeEvent({});
-      }, Math.round(W * 0.2), 50);
-      this.root.add([noneTxt, backBtn]);
-      return;
+      }, Math.round(W * 0.30), 48);
+      this.root.add(noneBtn);
     }
-
-    this.createScrollableCardGrid(shieldCards, 1.5, (entry, cardData, curM, nextM) => {
-      this.tweens.add({
-        targets: this.root, alpha: 0, duration: 200,
-        onComplete: () => {
-          this.root.removeAll(true);
-          this.root.setAlpha(1);
-          const resTitle = this.makeHeader('row1_2', '방어막 강화!', -H * 0.35);
-          const SC2 = 1.6;
-          const previewCard = new Card(this, -(CARD_WIDTH * SC2) / 2, -H * 0.20, cardData);
-          previewCard.setScale(SC2);
-
-          const resDesc = this.add.text(0, H * 0.18,
-            `[${i18n.t(cardData.nameKey)}]\n×${curM.toFixed(1)}  →  ×${nextM.toFixed(1)}`, {
-              fontFamily: FONT_B, fontSize: '24px', color: '#56b4f7', align: 'center'
-            }).setOrigin(0.5);
-
-          const confirmBtn = this.makeButton(0, H * 0.32, i18n.t('confirm') || '확인', 0x1a3a6c, () => {
-            this.closeEvent({ upgradeCardId: entry.cardId, upgradeCardMult: 1.5 });
-          }, Math.round(W * 0.28), 56);
-          this.root.add([resTitle, previewCard, resDesc, confirmBtn]);
-        }
-      });
-    }, '#56b4f7');
   }
 
   /** 카드 선택 버튼 목록을 렌더링하고, 선택 시 결과 화면 → closeEvent 흐름 처리 */

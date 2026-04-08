@@ -866,8 +866,8 @@ export default class BattleScene extends Phaser.Scene {
         const doOneHit = () => {
           if (this.enemyCurrentHp <= 0 || this.battleEnded) { resolve(); return; }
 
-          // 1. 속성 상성
-          let hitDmg = baseVal;
+          // 1. 속성 상성 (dmg = baseVal에 패시브 배율 적용된 값)
+          let hitDmg = dmg;
           if (card.element !== 'normal') {
             if (TYPE_BEATS[card.element] === this.data_.mapElement) hitDmg *= 1.5;
             else if (TYPE_BEATS[this.data_.mapElement] === card.element) hitDmg *= 0.5;
@@ -943,6 +943,7 @@ export default class BattleScene extends Phaser.Scene {
           }
 
           // 7. 연출 → 데미지 적용
+          console.log(`[카드 공격] ${card.nameKey} | baseVal=${card.value} dmg(패시브후)=${dmg} hitDmg(상성후)=${hitDmg.toFixed(1)} crit=${isCrit}(×${critDmgMult}) cardDmg=${cardDmg.toFixed(1)} bonus=${bonusDmg.toFixed(1)} pierce=${isPierce} finalDmg=${finalDmg}${isInstakill ? ' 즉사!' : ''}`);
           this.playPlayerAttack(card.element, () => {
             this.enemyCurrentHp = Math.max(0, this.enemyCurrentHp - finalDmg);
             this.updateEnemyHpBar();

@@ -47,6 +47,15 @@ export interface CharacterDef {
   descKey:     string;     // 고유 특성 설명 i18n 키
 }
 
+/** 무기 타입별 초기 덱 구성 요약 (캐릭터 선택 화면 미리보기용) */
+export const INITIAL_DECK_SUMMARY: Record<WeaponType, string> = {
+  swordShield: '공격×3  수비×3  포션×2\n흙★×4  물★×3  풀★×2  불★×1  번개★×1',
+  bow:         '화살×5  공격×2  수비×2  포션×2\n번개★×3  풀★×3  물★×1  불★×1  흙★×1',
+  greatsword:  '공격×4  수비×1  포션×1\n불★×4  번개★×3  물★×2  흙★×2  풀★×1',
+  hammer:      '공격×3  수비×3  포션×2\n흙★×4  불★×3  물★×2  풀★×1  번개★×1',
+  spear:       '투창×5  공격×2  수비×2  포션×2\n물★×2  불★×2  풀★×2  번개★×2  흙★×1',
+};
+
 /** 무기 타입별 캐릭터 정의 */
 export const CHARACTERS: CharacterDef[] = [
   {
@@ -303,7 +312,7 @@ export default class CharacterSelectScene extends Phaser.Scene {
       color: '#ffffff',
     }).setOrigin(0.5).setName('nameText');
 
-    const descText = this.add.text(leftCx, panelH * 0.62, '', {
+    const descText = this.add.text(leftCx, panelH * 0.42, '', {
       fontFamily: 'SBAggroM',
       fontSize: '13px',
       color: '#b8a880',
@@ -311,6 +320,23 @@ export default class CharacterSelectScene extends Phaser.Scene {
       lineSpacing: 4,
       wordWrap: { width: panelW * 0.34 },
     }).setOrigin(0.5).setName('descText');
+
+    // 초기 덱 미리보기
+    const deckLabel = this.add.text(leftCx, panelH * 0.62, '초기 덱', {
+      fontFamily: 'SBAggroB',
+      fontSize: '11px',
+      color: '#d4af37',
+      align: 'center',
+    }).setOrigin(0.5).setName('deckLabel');
+
+    const deckText = this.add.text(leftCx, panelH * 0.80, '', {
+      fontFamily: 'SBAggroM',
+      fontSize: '11px',
+      color: '#9ab8cc',
+      align: 'center',
+      lineSpacing: 3,
+      wordWrap: { width: panelW * 0.36 },
+    }).setOrigin(0.5).setName('deckText');
 
     // 세로 구분선
     const divider = this.add.graphics();
@@ -333,7 +359,7 @@ export default class CharacterSelectScene extends Phaser.Scene {
       }).setOrigin(0, 0.5)
     );
 
-    this.detailPanel.add([bg, nameText, descText, divider, statG, ...labelTexts]);
+    this.detailPanel.add([bg, nameText, descText, deckLabel, deckText, divider, statG, ...labelTexts]);
   }
 
   private buildEquipmentPanel(_width: number, height: number, layout: ReturnType<typeof this.calcLayout>) {
@@ -545,6 +571,10 @@ export default class CharacterSelectScene extends Phaser.Scene {
     // 고유 특성
     const descText = this.detailPanel.getByName('descText') as Phaser.GameObjects.Text;
     descText?.setText(i18n.t(char.descKey));
+
+    // 초기 덱 미리보기
+    const deckText = this.detailPanel.getByName('deckText') as Phaser.GameObjects.Text;
+    deckText?.setText(INITIAL_DECK_SUMMARY[char.weapon]);
 
     // 스탯 바
     const statG = this.detailPanel.getByName('statG') as Phaser.GameObjects.Graphics;

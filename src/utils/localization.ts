@@ -35,7 +35,7 @@ export const translations = {
     'statCrit': '크확',
     'statCritDmg': '크뎀',
     'descGuardian': '쉴드 카드 효율 2배',
-    'descRanger': '매 턴 화살 수급 카드 1장 보장\n화살 종류별 랜덤 추가 데미지',
+    'descRanger': '화살 카드 공격력 2배\n연쇄 공격 데미지 +50%',
     'descBerserker': '체력이 낮을수록 크리티컬 확률·데미지↑',
     'descTitan': '적의 방어막을 무시하고 파괴',
     'descLancer': '투창 카드 1장 보장\n크리티컬 데미지 ≥ 적 체력 시 즉사',
@@ -219,7 +219,7 @@ export const translations = {
     'card25Desc': '무기에 따른 공격을 한다.',
     'card26Desc': '방어막이 생성된다.\n상대 턴에 받는 데미지를 상쇄한다.',
     'card27Desc': '(창 전용)창을 던진다.\n적의 피보다 치명타 데미지가 높으면 즉사시킨다.',
-    'card28Desc': '(활 전용)화살 통에서 화살을 꺼낸다.\n5개를 꺼내고 공격마다 1개씩 소비된다.',
+    'card28Desc': '(활 전용) 화살로 공격한다.\n레인저가 사용하면 데미지 2배.',
     'card29Desc': '붉은 액체가 담긴 신비한 물약.\n체력을 회복한다.'
   },
   en: {
@@ -256,7 +256,7 @@ export const translations = {
     'statCrit': 'CRIT',
     'statCritDmg': 'C.DMG',
     'descGuardian': 'Shield card efficiency ×2',
-    'descRanger': 'Guaranteed arrow supply card per turn\nBonus damage by arrow type',
+    'descRanger': 'Arrow card damage ×2\nChain attack damage +50%',
     'descBerserker': 'Lower HP = higher CRIT rate & damage',
     'descTitan': 'Ignores and destroys enemy shields',
     'descLancer': 'Guaranteed javelin card per turn\nInstant kill if CRIT dmg ≥ enemy HP',
