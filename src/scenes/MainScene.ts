@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { AudioManager } from '@src/utils/Audio';
 import { i18n } from '@src/utils/localization';
 import { getNodeFrameName, NODE_TYPE_GROUPS, BOSS_NODE_TYPES } from '@src/data/nodeTypes';
 import { CharacterDef, WeaponType, CHAR_SPRITE_KEY, CHAR_FRAME_COUNT, WEAPON_COLORS, CHARACTERS } from '@src/scenes/CharacterSelectScene';
@@ -25,6 +26,7 @@ interface SaveState {
   equipment?: string[];
   maxEquipSlots?: number;
   cardMultipliers?: Record<number, number>;
+  normalCardStars?: Record<number, number>;
 }
 
 // ─── 상수 ─────────────────────────────────────────────────────────────────────
@@ -92,6 +94,7 @@ export default class MainScene extends Phaser.Scene {
   private maxEquipSlots    = 1;
   private mapHash          = '';
   private cardMultipliers: Record<number, number> = {}; // 런타임 개별 카드 배율
+  private normalCardStars: Record<number, number> = {}; // 일반 카드 별 강화 횟수
 
   // ── 게임 오브젝트 참조 ────────────────────────────────────────────────────────
   private playerToken!: Phaser.GameObjects.Arc;
@@ -156,6 +159,7 @@ export default class MainScene extends Phaser.Scene {
     this.playerCardMult   = state.playerCardMult   ?? 1.0;
     this.playerShieldMult = state.playerShieldMult ?? 1.0;
     this.cardMultipliers  = state.cardMultipliers || {};
+    this.normalCardStars  = state.normalCardStars  || {};
     this.currentMapElement = (state as any).mapElement ?? 'water';
 
     // 만약 새 게임(isContinue === false)이고 초기 장비가 존재한다면, 해당 장비의 스탯을 기본 스탯에 적용
@@ -226,7 +230,19 @@ export default class MainScene extends Phaser.Scene {
 
     // 노드 클릭 이벤트 등록 (allNodes, nodeSpritesMap 클로저로 사용)
     this.registerNodeClickEvents(allNodes, nodeSpritesMap);
+    
+    // ── 사운드 재생 ───────────────────────────────────────────────────────────
+    this.playMainBGM();
+    this.events.on('resume', () => this.playMainBGM());
+
     this.isReady = true;
+  }
+
+  private playMainBGM() {
+    if (!this.sound.get('bgm_main')?.isPlaying) {
+      this.sound.stopAll();
+      this.sound.play('bgm_main', { loop: true, volume: 0.4 });
+    }
   }
 
   update() {
@@ -358,6 +374,7 @@ export default class MainScene extends Phaser.Scene {
       playerCardMult:   this.playerCardMult,
       playerShieldMult: this.playerShieldMult,
       cardMultipliers:  this.cardMultipliers,
+      normalCardStars:  this.normalCardStars,
     };
     (state as any).mapElement = this.currentMapElement; // mapElement 저장
     await this.saveToElectron(state);
@@ -1091,6 +1108,7 @@ export default class MainScene extends Phaser.Scene {
   private movePlayer(targetX: number, targetY: number, targetNode?: MapNode) {
     if (!this.playerToken) return;
     this.isMoving = true;
+    AudioManager.play('MOVE');
     this.tweens.killTweensOf(this.playerToken);
 
     const cam    = this.cameras.main;
@@ -1327,7 +1345,12 @@ export default class MainScene extends Phaser.Scene {
       playerEquipment: [...this.playerEquipment],
       maxEquipSlots:   this.maxEquipSlots,
       characterWeapon: this.character?.weapon ?? 'swordShield',
-      deck:            this.playerDeck.map(e => ({ cardId: e.card.id, count: e.count, mult: this.cardMultipliers[e.card.id] || 1.0 })),
+      deck:            this.playerDeck.map(e => ({
+        cardId: e.card.id,
+        count:  e.count,
+        mult:   this.cardMultipliers[e.card.id] || 1.0,
+        stars:  e.card.element === 'normal' ? (this.normalCardStars[e.card.id] || 0) : undefined,
+      })),
     });
 
     this.game.events.once('nodeEventComplete', (result: Record<string, unknown>) => {
@@ -1366,6 +1389,14 @@ export default class MainScene extends Phaser.Scene {
       }
       if (typeof result.upgradeStarCardId === 'number') {
         this.starUpDeckCardById(result.upgradeStarCardId);
+      }
+      if (typeof result.upgradeNormalStarCardId === 'number') {
+        const cid = result.upgradeNormalStarCardId as number;
+        const cur = this.normalCardStars[cid] || 0;
+        if (cur < 5) {
+          this.normalCardStars[cid] = cur + 1;
+          this.cardMultipliers[cid] = parseFloat(((this.cardMultipliers[cid] || 1.0) * 1.25).toFixed(4));
+        }
       }
       if (typeof result.pokerCard === 'number' && result.pokerCard > 0) {
         this.addPokerCard(result.pokerCard);

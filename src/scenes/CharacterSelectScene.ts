@@ -62,35 +62,35 @@ export const CHARACTERS: CharacterDef[] = [
     id: 'guardian',
     weapon: 'swordShield',
     nameKey: 'weaponSwordShield',
-    hp: 100, atk: 10, def: 10, crit: 10, critDmg: 1.5,
+    hp: 110, atk: 10, def: 12, crit: 10, critDmg: 1.5,
     descKey: 'descGuardian',
   },
   {
     id: 'ranger',
     weapon: 'bow',
     nameKey: 'weaponBow',
-    hp: 60, atk: 10, def: 0, crit: 20, critDmg: 1.5,
+    hp: 55, atk: 14, def: 0, crit: 25, critDmg: 1.5,
     descKey: 'descRanger',
   },
   {
     id: 'berserker',
     weapon: 'greatsword',
     nameKey: 'weaponGreatsword',
-    hp: 80, atk: 10, def: 10, crit: 10, critDmg: 1.5,
+    hp: 75, atk: 12, def: 10, crit: 15, critDmg: 1.5,
     descKey: 'descBerserker',
   },
   {
     id: 'titan',
     weapon: 'hammer',
     nameKey: 'weaponHammer',
-    hp: 100, atk: 10, def: 0, crit: 10, critDmg: 1.5,
+    hp: 115, atk: 13, def: 0, crit: 10, critDmg: 1.5,
     descKey: 'descTitan',
   },
   {
     id: 'lancer',
     weapon: 'spear',
     nameKey: 'weaponSpear',
-    hp: 80, atk: 10, def: 0, crit: 10, critDmg: 1.5,
+    hp: 80, atk: 10, def: 0, crit: 15, critDmg: 1.8,
     descKey: 'descLancer',
   },
 ];
@@ -119,6 +119,10 @@ export default class CharacterSelectScene extends Phaser.Scene {
   private equipTooltipBg!: Phaser.GameObjects.Graphics;
   private equipTooltipText!: Phaser.GameObjects.Text;
 
+  private charTooltip!: Phaser.GameObjects.Container;
+  private charTooltipBg!: Phaser.GameObjects.Graphics;
+  private charTooltipText!: Phaser.GameObjects.Text;
+
   constructor() {
     super('CharacterSelectScene');
   }
@@ -143,6 +147,13 @@ export default class CharacterSelectScene extends Phaser.Scene {
     }
 
     this.buildBackground(width, height);
+    
+    // ── 사운드 재생 ───────────────────────────────────────────────────────────
+    if (!this.sound.get('bgm_intro')?.isPlaying) {
+      this.sound.stopAll();
+      this.sound.play('bgm_intro', { loop: true, volume: 0.5 });
+    }
+
     this.cameras.main.fadeIn(250, 0, 0, 0);
     this.buildTitle(width, height);
     this.createCharAnimations();
@@ -152,6 +163,7 @@ export default class CharacterSelectScene extends Phaser.Scene {
     this.buildDetailPanel(layout);
     this.buildEquipmentPanel(width, height, layout);
     this.buildTooltip();
+    this.buildCharTooltip();
     this.buildButtons(width, height);
 
     this.selectCharacter(0);
@@ -280,11 +292,14 @@ export default class CharacterSelectScene extends Phaser.Scene {
         if (this.selectedIndex !== idx) {
           this.tweens.add({ targets: container, y: cardY - 6, duration: 110, ease: 'Power1' });
         }
+        const cx = startX + idx * (cardW + 10) + cardW / 2;
+        this.showCharTooltip(char, cx, cardY, cardH);
       });
       container.on('pointerout', () => {
         if (this.selectedIndex !== idx) {
           this.tweens.add({ targets: container, y: cardY, duration: 110, ease: 'Power1' });
         }
+        this.hideCharTooltip();
       });
       container.on('pointerdown', () => this.selectCharacter(idx));
 
@@ -487,6 +502,46 @@ export default class CharacterSelectScene extends Phaser.Scene {
       fontFamily: 'SBAggroM', fontSize: '13px', color: '#eeeeee', lineSpacing: 5
     });
     this.equipTooltip.add([this.equipTooltipBg, this.equipTooltipText]);
+  }
+
+  private buildCharTooltip() {
+    this.charTooltip = this.add.container(-1000, -1000).setDepth(1900).setVisible(false);
+    this.charTooltipBg = this.add.graphics();
+    this.charTooltipText = this.add.text(12, 10, '', {
+      fontFamily: 'SBAggroM', fontSize: '13px', color: '#eeeeee', lineSpacing: 6,
+      wordWrap: { width: 240 },
+    });
+    this.charTooltip.add([this.charTooltipBg, this.charTooltipText]);
+  }
+
+  private showCharTooltip(char: CharacterDef, cardX: number, cardY: number, cardH: number) {
+    const hintKey = `charHint${char.id.charAt(0).toUpperCase()}${char.id.slice(1)}`;
+    const text = i18n.t(hintKey) || '';
+    if (!text) return;
+
+    this.charTooltipText.setText(text);
+    const tw = this.charTooltipText.width + 24;
+    const th = this.charTooltipText.height + 20;
+
+    this.charTooltipBg.clear();
+    this.charTooltipBg.fillStyle(0x0d0d20, 0.95);
+    this.charTooltipBg.lineStyle(1, WEAPON_COLORS[char.weapon].card, 0.8);
+    this.charTooltipBg.fillRoundedRect(0, 0, tw, th, 8);
+    this.charTooltipBg.strokeRoundedRect(0, 0, tw, th, 8);
+
+    // 카드 아래쪽에 표시, 화면 밖으로 나가면 위쪽으로
+    const { width, height } = this.scale;
+    let tx = cardX - tw / 2;
+    let ty = cardY + cardH / 2 + 8;
+    if (tx + tw > width - 10) tx = width - tw - 10;
+    if (tx < 10) tx = 10;
+    if (ty + th > height - 10) ty = cardY - cardH / 2 - th - 8;
+
+    this.charTooltip.setPosition(tx, ty).setVisible(true);
+  }
+
+  private hideCharTooltip() {
+    this.charTooltip.setVisible(false);
   }
 
 

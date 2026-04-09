@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { AudioManager } from '@src/utils/Audio';
 import { NODE_TYPE, BOSS_ELEMENT_NAME, isBossType } from '@src/data/nodeTypes';
 import { CARD_DATA_LIST, type CardElement, type CardData } from '@src/data/cardData';
 import { i18n } from '@src/utils/localization';
@@ -27,7 +28,7 @@ export interface NodeEventData {
   maxEquipSlots:   number;
   // 전투 이벤트용 추가 필드
   characterWeapon: WeaponType;
-  deck:            { cardId: number; count: number; mult?: number }[];
+  deck:            { cardId: number; count: number; mult?: number; stars?: number }[];
   playerCardMult:  number;
   playerShieldMult: number;
 }
@@ -171,7 +172,10 @@ export default class NodeEventScene extends Phaser.Scene {
     btn.setInteractive(new Phaser.Geom.Rectangle(-bw / 2, -h / 2, bw, h), Phaser.Geom.Rectangle.Contains);
     btn.on('pointerover', () => txt.setColor('#ffdb58').setScale(1.05));
     btn.on('pointerout',  () => txt.setColor('#ffffff').setScale(1));
-    btn.on('pointerdown', onDown);
+    btn.on('pointerdown', () => {
+      AudioManager.play('CLICK');
+      onDown();
+    });
     return btn;
   }
 
@@ -203,6 +207,9 @@ export default class NodeEventScene extends Phaser.Scene {
   }
 
   private emitAndResume(result: Record<string, unknown>) {
+    // 이벤트 종료 시 BGM 정지
+    this.sound.stopAll();
+    
     this.game.events.emit('nodeEventComplete', { ...result, nodeId: this.data_.nodeId });
     this.scene.stop();
     this.scene.resume('MainScene');
@@ -225,6 +232,9 @@ export default class NodeEventScene extends Phaser.Scene {
     popup.setAlpha(0).setY(40);
     this.tweens.add({ targets: popup, alpha: 1, y: 60, duration: 300, ease: 'Back.easeOut' });
     this.tweens.add({ targets: popup, alpha: 0, y: 30, duration: 400, delay: 1500, onComplete: () => popup.destroy() });
+
+    // 보상 획득 사운드
+    this.sound.play('sfx_reward', { volume: 0.5 });
   }
 
   private scrollCont: Phaser.GameObjects.Container | null = null;
@@ -269,6 +279,8 @@ export default class NodeEventScene extends Phaser.Scene {
       deck,
       playerCardMult: this.data_.playerCardMult,
       playerShieldMult: this.data_.playerShieldMult,
+      playerEquipment: this.data_.playerEquipment ?? [],
+      isFinalBoss: false, // 일반 전투는 최종 보스 아님
     });
 
     // NodeEventScene 자신은 종료 (BattleScene이 nodeEventComplete 직접 발행)
@@ -297,6 +309,9 @@ export default class NodeEventScene extends Phaser.Scene {
   // ─────────────────────────────────────────────────────────────────────────────
 
   private createEnhanceEvent() {
+    this.sound.stopAll();
+    this.sound.play('bgm_event_enhance', { loop: true, volume: 0.4 });
+
     const H = this.H;
     const W = this.W;
     const { playerMaxHp, playerCrit, playerCritDmg, playerDef, playerAtk } = this.data_;
@@ -319,6 +334,7 @@ export default class NodeEventScene extends Phaser.Scene {
         onComplete: () => {
           this.root.removeAll(true);
           this.root.setAlpha(1);
+          AudioManager.play('UPGRADE');
           const resTitle = this.makeHeader('row0_2', '강화 성공!', -H * 0.35);
           const resName  = this.add.text(0, -H * 0.18, p.name, {
             fontFamily: FONT_B, fontSize: '28px', color: '#2ecc71'
@@ -353,6 +369,9 @@ export default class NodeEventScene extends Phaser.Scene {
   // ─────────────────────────────────────────────────────────────────────────────
 
   private createTreasureEvent() {
+    this.sound.stopAll();
+    this.sound.play('bgm_event_treasure', { loop: true, volume: 0.4 });
+
     const H = this.H;
     const W = this.W;
     const { playerEquipment, maxEquipSlots } = this.data_;
@@ -545,6 +564,7 @@ export default class NodeEventScene extends Phaser.Scene {
       };
 
       cont.on('pointerover', () => {
+          AudioManager.play('CARD_HOVER');
         drawBg(true);
         this.tweens.add({ targets: cont, scaleX: 1.06, scaleY: 1.06, duration: 100 });
         showTooltip(equip, cx, cy);
@@ -554,7 +574,10 @@ export default class NodeEventScene extends Phaser.Scene {
         this.tweens.add({ targets: cont, scaleX: 1, scaleY: 1, duration: 100 });
         tooltipCont.setVisible(false);
       });
-      cont.on('pointerdown', () => pickEquip(equip));
+      cont.on('pointerdown', () => {
+          AudioManager.play('CARD_SELECT');
+        pickEquip(equip);
+      });
 
       return cont;
     });
@@ -583,6 +606,9 @@ export default class NodeEventScene extends Phaser.Scene {
   // ─────────────────────────────────────────────────────────────────────────────
 
   private createCardFlipEvent() {
+    this.sound.stopAll();
+    this.sound.play('bgm_event_flip', { loop: true, volume: 0.4 });
+
     const H = this.H;
     const W = this.W;
     const INIT_GOLD  = 10;
@@ -743,6 +769,9 @@ export default class NodeEventScene extends Phaser.Scene {
   // ─────────────────────────────────────────────────────────────────────────────
 
   private createCardSwapEvent() {
+    this.sound.stopAll();
+    this.sound.play('bgm_event_swap', { loop: true, volume: 0.4 });
+
     const H = this.H, W = this.W;
     const ELEMENTS: CardElement[]           = ['water', 'fire', 'grass', 'lightning', 'earth'];
     const ELEM_OFFSET: Record<string, number> = { water:0, fire:5, grass:10, lightning:15, earth:20 };
@@ -824,6 +853,7 @@ export default class NodeEventScene extends Phaser.Scene {
             this.tweens.add({ targets: this.root, alpha: 0, duration: 180, onComplete: () => {
               this.root.removeAll(true);
               this.root.setAlpha(1);
+              AudioManager.play('UPGRADE');
               const group: Phaser.GameObjects.GameObject[] = [
                 this.makeHeader('row1_0', '속성 변환 완료!', -H * 0.38),
                 this.add.text(0, -H * 0.27,
@@ -856,6 +886,9 @@ export default class NodeEventScene extends Phaser.Scene {
   // ─────────────────────────────────────────────────────────────────────────────
 
   private createHeartEvent() {
+    this.sound.stopAll();
+    this.sound.play('bgm_event_heart', { loop: true, volume: 0.4 });
+
     const H = this.H;
     const W = this.W;
     const { playerHp, playerMaxHp } = this.data_;
@@ -888,6 +921,7 @@ export default class NodeEventScene extends Phaser.Scene {
         this.tweens.add({ targets: this.root, alpha: 0, duration: 180, onComplete: () => {
           this.root.removeAll(true);
           this.root.setAlpha(1);
+          AudioManager.play('UPGRADE');
           const resTitle = this.makeHeader('row1_1', '제단 강화 완료!', -H * 0.20);
           const resDesc  = this.add.text(0, -H * 0.04,
             `HP  ${playerHp}  →  ${Math.max(1, playerHp - tier.hpCost)}\n모든 카드 밸류  ×${tier.mult.toFixed(1)}`, {
@@ -916,6 +950,9 @@ export default class NodeEventScene extends Phaser.Scene {
   // ─────────────────────────────────────────────────────────────────────────────
 
   private createShieldEvent() {
+    this.sound.stopAll();
+    this.sound.play('bgm_event_shield', { loop: true, volume: 0.4 });
+
     const H = this.H;
     const W = this.W;
     const { playerHp, playerMaxHp } = this.data_;
@@ -982,8 +1019,8 @@ export default class NodeEventScene extends Phaser.Scene {
           this.tweens.add({ targets: this.root, alpha: 0, duration: 200, onComplete: () => {
             this.root.removeAll(true);
             this.root.setAlpha(1);
-            const SC2 = 1.6;
-            const previewCard = new Card(this, -(CARD_WIDTH * SC2) / 2, -H * 0.20, cardData);
+            const SC2 = Math.min(1.15, H * 0.46 / CARD_HEIGHT);
+            const previewCard = new Card(this, -(CARD_WIDTH * SC2) / 2, -H * 0.17, cardData);
             previewCard.setScale(SC2);
             this.root.add([
               this.makeHeader('row1_2', '방어막 강화!', -H * 0.35),
@@ -1061,8 +1098,8 @@ export default class NodeEventScene extends Phaser.Scene {
             this.root.setAlpha(1);
             const resTitle = this.makeHeader('row1_2', '카드 강화 완료!', -H * 0.35);
             
-            const SC2 = 1.6;
-            const previewCard = new Card(this, -(CARD_WIDTH * SC2) / 2, -H * 0.20, cardData);
+            const SC2 = Math.min(1.15, H * 0.46 / CARD_HEIGHT);
+            const previewCard = new Card(this, -(CARD_WIDTH * SC2) / 2, -H * 0.17, cardData);
             previewCard.setScale(SC2);
             this.root.add(previewCard);
 
@@ -1089,6 +1126,9 @@ export default class NodeEventScene extends Phaser.Scene {
   // ─────────────────────────────────────────────────────────────────────────────
 
   private createStarEvent() {
+    this.sound.stopAll();
+    this.sound.play('bgm_event_star', { loop: true, volume: 0.4 });
+
     const H = this.H;
     const W = this.W;
 
@@ -1104,40 +1144,56 @@ export default class NodeEventScene extends Phaser.Scene {
 
     // 전체 덱을 그리드로 보여주되, 업그레이드 가능 여부에 따라 인터랙션 제어
     this.createScrollableCardGrid(deckList, 1.0, (entry, cardData) => {
-      const isElemental = cardData.element !== 'normal';
-      const isMaxed      = cardData.stars >= 5;
+      const isElemental  = cardData.element !== 'normal';
+      const starsNow     = isElemental ? cardData.stars : (entry.stars ?? 0);
+      const isMaxed      = starsNow >= 5;
 
-      if (!isElemental || isMaxed) return; // 무시 (이미 createScrollableCardGrid 내부에서 dimmed 처리 권장)
+      if (isMaxed) return;
 
-      const starsNow  = cardData.stars;
-      const starsNext = Math.min(starsNow + 1, 5);
+      const starsNext = starsNow + 1;
+      const SC2 = Math.min(1.1, H * 0.44 / CARD_HEIGHT);
 
       this.tweens.add({
         targets: this.root, alpha: 0, duration: 200,
         onComplete: () => {
           this.root.removeAll(true);
           this.root.setAlpha(1);
+          AudioManager.play('UPGRADE');
           const resTitle = this.makeHeader('row1_3', '⭐ 별 업그레이드!', -H * 0.37);
 
-          const off = this.ELEM_OFFSET[cardData.element];
-          const nextCardData = off != null 
-            ? CARD_DATA_LIST[off + cardData.stars] // stars -> stars+1 (index = off + currentStars)
-            : null;
+          // 속성 카드: 다음 등급 카드 미리보기 / 일반 카드: 별 증가 미리보기
+          let previewCard: Card | null = null;
+          if (isElemental) {
+            const off = this.ELEM_OFFSET[cardData.element];
+            const nextCardData = off != null ? CARD_DATA_LIST[off + cardData.stars] : null;
+            if (nextCardData) {
+              previewCard = new Card(this, -(CARD_WIDTH * SC2) / 2, -H * 0.17, nextCardData);
+            }
+          } else {
+            // 일반 카드: stars만 올라간 모습으로 미리보기
+            previewCard = new Card(this, -(CARD_WIDTH * SC2) / 2, -H * 0.17, cardData, starsNext);
+          }
 
-          const SC2 = 1.4;
-          if (nextCardData) {
-            const previewCard = new Card(this, -(CARD_WIDTH * SC2) / 2, -H * 0.20, nextCardData);
+          if (previewCard) {
             previewCard.setScale(SC2);
             this.root.add(previewCard);
           }
 
+          const multLabel = !isElemental
+            ? `\n밸류 ×${(entry.mult ?? 1).toFixed(2)} → ×${((entry.mult ?? 1) * 1.25).toFixed(2)}`
+            : '';
+
           const resDesc = this.add.text(0, H * 0.18,
-            `[${i18n.t(cardData.nameKey)}]\n${'★'.repeat(starsNow)}  →  ${'★'.repeat(starsNext)}`, {
-              fontFamily: FONT_B, fontSize: '22px', color: '#f1c40f', align: 'center'
+            `[${i18n.t(cardData.nameKey)}]\n${'★'.repeat(starsNow)}  →  ${'★'.repeat(starsNext)}${multLabel}`, {
+              fontFamily: FONT_B, fontSize: '20px', color: '#f1c40f', align: 'center'
             }).setOrigin(0.5);
 
           const confirmBtn = this.makeButton(0, H * 0.32, i18n.t('confirm') || '확인', 0x1a5c1a, () => {
-            this.closeEvent({ upgradeStarCardId: entry.cardId });
+            if (isElemental) {
+              this.closeEvent({ upgradeStarCardId: entry.cardId });
+            } else {
+              this.closeEvent({ upgradeNormalStarCardId: entry.cardId });
+            }
           }, Math.round(W * 0.26), 56);
 
           this.root.add([resTitle, resDesc, confirmBtn]);
@@ -1177,16 +1233,18 @@ export default class NodeEventScene extends Phaser.Scene {
       }
     });
 
-    const CARD_SC = 0.68;                    // 카드 스케일 (1행에 더 많이 보이도록)
-    const scaledW = CARD_WIDTH  * CARD_SC;   // ≈ 122
-    const scaledH = CARD_HEIGHT * CARD_SC;   // ≈ 171
-    const gapX    = 18;
+    // 카드 스케일: 그리드가 화면 하단(버튼 영역 포함)에 맞도록 적응형 결정
+    // 가용 높이 = 화면 절반에서 그리드 위치(GRID_Y)를 더한 위치까지 ~45%H
+    const CARD_SC = Math.min(0.68, H * 0.30 / CARD_HEIGHT);
+    const scaledW = CARD_WIDTH  * CARD_SC;
+    const scaledH = CARD_HEIGHT * CARD_SC;
+    const gapX    = 16;
     const LABEL_H = 18;                      // 라벨 공간
     const GRID_Y  = H * 0.07;               // 제목 영역 아래로 내림
 
     // 마스크: 1행 카드 + 라벨이 정확히 들어오는 높이
     const maskW = W * 0.92;
-    const maskH = scaledH + LABEL_H + 16;
+    const maskH = scaledH + LABEL_H + 14;
     const maskX = W / 2 - maskW / 2;
     const maskY = H / 2 + GRID_Y - maskH / 2;
 
@@ -1213,11 +1271,13 @@ export default class NodeEventScene extends Phaser.Scene {
       const cx = i * (scaledW + gapX) - maskW / 2 + scaledW / 2 + 20;
       const cy = LABEL_H / 2;  // 라벨 공간만큼 아래로
 
-      const isElemental = cardData.element !== 'normal';
-      const isMaxed      = cardData.stars >= 5;
-      const canUpgrade   = isStar ? (isElemental && !isMaxed) : true;
+      const isElemental    = cardData.element !== 'normal';
+      const effectiveStars = isElemental ? cardData.stars : (entry.stars ?? 0);
+      const isMaxed        = effectiveStars >= 5;
+      const canUpgrade     = isStar ? !isMaxed : true;
 
-      const card = new Card(this, cx - scaledW / 2, cy - scaledH / 2, cardData);
+      const card = new Card(this, cx - scaledW / 2, cy - scaledH / 2, cardData,
+        !isElemental ? effectiveStars : undefined);
       card.setScale(CARD_SC);
 
       if (canUpgrade) {
@@ -1232,7 +1292,7 @@ export default class NodeEventScene extends Phaser.Scene {
       // 강화 수치 라벨
       let label: Phaser.GameObjects.Text | null = null;
       if (isStar && canUpgrade) {
-        const sn = cardData.stars;
+        const sn = effectiveStars;
         label = this.add.text(cx, cy - scaledH / 2 - 4,
           `${'★'.repeat(sn)}→${'★'.repeat(Math.min(sn + 1, 5))}`, {
           fontFamily: FONT_B, fontSize: '11px', color, stroke: '#000', strokeThickness: 2,
@@ -1245,15 +1305,20 @@ export default class NodeEventScene extends Phaser.Scene {
       }
 
       card.on('pointerover', () => {
-        if (!this.isDragging)
+        if (!this.isDragging) {
+            AudioManager.play('CARD_HOVER');
           this.tweens.add({ targets: card, scaleX: CARD_SC * 1.07, scaleY: CARD_SC * 1.07, duration: 80 });
+        }
       });
       card.on('pointerout', () =>
         this.tweens.add({ targets: card, scaleX: CARD_SC, scaleY: CARD_SC, duration: 80 }),
       );
       // 클릭 = pointerup 시 isDragging이 false인 경우만
       card.on('pointerup', () => {
-        if (!this.isDragging) onClick(entry, cardData, currentMult, nextMult);
+        if (!this.isDragging) {
+            AudioManager.play('CARD_SELECT');
+          onClick(entry, cardData, currentMult, nextMult);
+        }
       });
 
       listCont.add(card);
@@ -1315,6 +1380,9 @@ export default class NodeEventScene extends Phaser.Scene {
   // ─────────────────────────────────────────────────────────────────────────────
 
   private createIndianPokerEvent() {
+    this.sound.stopAll();
+    this.sound.play('bgm_event_poker', { loop: true, volume: 0.4 });
+
     const H = this.H;
     const W = this.W;
     const { mapElement } = this.data_;
@@ -1629,6 +1697,9 @@ export default class NodeEventScene extends Phaser.Scene {
   // ─────────────────────────────────────────────────────────────────────────────
 
   private createDeckPurificationEvent() {
+    this.sound.stopAll();
+    this.sound.play('bgm_event_poker', { loop: true, volume: 0.4 });
+
     const H = this.H, W = this.W;
     const ELEM_OFFSET: Record<string, number> = { water:0, fire:5, grass:10, lightning:15, earth:20 };
 
@@ -1806,6 +1877,8 @@ export default class NodeEventScene extends Phaser.Scene {
         deck,
         playerCardMult:   this.data_.playerCardMult,
         playerShieldMult: this.data_.playerShieldMult,
+        playerEquipment:  this.data_.playerEquipment ?? [],
+        isFinalBoss:      isFinal,
       });
       // NodeEventScene 자신은 종료 (BattleScene이 nodeEventComplete 직접 발행)
       this.scene.stop();

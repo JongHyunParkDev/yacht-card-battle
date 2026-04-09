@@ -186,6 +186,23 @@ export default class PreloadScene extends Phaser.Scene {
     // 장비 아이콘 스프라이트 시트 분할 (1024x1024 해상도, 4x4 그리드 -> 256x256)
     this.load.spritesheet('equip_sheet_1', equipSheet1, { frameWidth: 256, frameHeight: 256 });
     this.load.spritesheet('equip_sheet_2', equipSheet2, { frameWidth: 256, frameHeight: 256 });
+
+    // ── 오디오 에셋 로드 ────────────────────────────────────────────────────────
+    // BGM
+    const bgmPath = 'src/assets/sound/bgm/';
+    this.load.audio('bgm_intro',          [`${bgmPath}bgm_intro.mp3`]);
+    this.load.audio('bgm_main',           [`${bgmPath}bgm_main.mp3`]);
+    this.load.audio('bgm_battle_normal',  [`${bgmPath}bgm_battle_normal.mp3`]);
+    this.load.audio('bgm_battle_boss',    [`${bgmPath}bgm_battle_boss.mp3`]);
+    this.load.audio('bgm_battle_final',   [`${bgmPath}bgm_battle_final.mp3`]);
+    this.load.audio('bgm_event_enhance',  [`${bgmPath}bgm_event_enhance.mp3`]);
+    this.load.audio('bgm_event_treasure', [`${bgmPath}bgm_event_treasure.mp3`]);
+    this.load.audio('bgm_event_flip',     [`${bgmPath}bgm_event_flip.mp3`]);
+    this.load.audio('bgm_event_swap',     [`${bgmPath}bgm_event_swap.mp3`]);
+    this.load.audio('bgm_event_heart',    [`${bgmPath}bgm_event_heart.mp3`]);
+    this.load.audio('bgm_event_shield',   [`${bgmPath}bgm_event_shield.mp3`]);
+    this.load.audio('bgm_event_star',     [`${bgmPath}bgm_event_star.mp3`]);
+    this.load.audio('bgm_event_poker',    [`${bgmPath}bgm_event_poker.mp3`]);
   }
 
   create() {

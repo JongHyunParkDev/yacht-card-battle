@@ -7,14 +7,20 @@ const getCssColor = (varName: string, defaultColor: string) => {
   if (typeof document === 'undefined') return defaultColor;
   return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || defaultColor;
 };
+import { AudioManager } from '@src/utils/Audio';
+
 export default class IntroScene extends Phaser.Scene {
   constructor() {
     super('IntroScene');
   }
-
   async create() {
+    AudioManager.init(this);
     // 1. 가장 뒷 배경 (공통 유틸 사용)
     addFullscreenBackground(this, 'bg1');
+
+    // ── 사운드 재생 ───────────────────────────────────────────────────────────
+    this.sound.stopAll();
+    this.sound.play('bgm_intro', { loop: true, volume: 0.5 });
 
     this.cameras.main.fadeIn(250, 0, 0, 0);
 

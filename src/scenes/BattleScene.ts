@@ -5,25 +5,28 @@ import { i18n } from '@src/utils/localization';
 import { WeaponType, CHAR_SPRITE_KEY, CHAR_FRAME_COUNT } from '@src/scenes/CharacterSelectScene';
 import Card, { CARD_WIDTH, CARD_HEIGHT } from '@src/objects/Card';
 import type { CardEffect } from '@src/data/cardData';
+import { AudioManager } from '@src/utils/Audio';
 
 // ─── 인터페이스 ───────────────────────────────────────────────────────────────
 
 export interface BattleSceneData {
-  nodeId:          number;
-  isElemental:     boolean;
-  isBoss?:         boolean;  // 보스 전투 여부
-  mapElement:      CardElement;
-  mobName:         string;
-  playerHp:        number;
-  playerMaxHp:     number;
-  playerAtk:       number;
-  playerDef:       number;
-  playerCrit:      number;
-  playerCritDmg:   number;
-  characterWeapon: WeaponType;
-  deck:            { cardId: number; count: number; mult?: number }[];
-  playerCardMult:  number;
+  nodeId:           number;
+  isElemental:      boolean;
+  isBoss?:          boolean;
+  mapElement:       CardElement;
+  mobName:          string;
+  playerHp:         number;
+  playerMaxHp:      number;
+  playerAtk:        number;
+  playerDef:        number;
+  playerCrit:       number;
+  playerCritDmg:    number;
+  characterWeapon:  WeaponType;
+  deck:             { cardId: number; count: number; mult?: number }[];
+  playerCardMult:   number;
   playerShieldMult: number;
+  playerEquipment?: string[];  // 장비 ID 목록 (패시브 효과 적용용)
+  isFinalBoss?:     boolean;   // 최종 보스 여부
 }
 
 // ─── 상수 ─────────────────────────────────────────────────────────────────────
@@ -98,6 +101,16 @@ export default class BattleScene extends Phaser.Scene {
   private shieldBadge!:     Phaser.GameObjects.Container; // 쉴드 표시 뱃지
   private currentTurnDefense = 0;
 
+  // ── 장비 패시브 효과 (applyEquipmentPassives에서 계산) ──────────────────────
+  private equipShieldPerTurn  = 0;   // shield_on_turn_end 합계
+  private equipHealOnWin      = 0;   // heal_on_win 합계
+  private equipHealOnWinPct   = 0;   // heal_on_win_pct 합계
+  private equipElemAmplify    = 0;   // element_amplify 합계
+  private equipLifestealPct   = 0;   // lifesteal_pct 합계
+  private equipCardMultOnCrit = 0;   // card_mult_on_crit 합계
+  private equipElemAtkBonus: Record<string, number> = {};  // elementAtkBonus
+  private equipElemDmgReduce: Record<string, number> = {}; // elementDefBonus
+
   // ── UI ────────────────────────────────────────────────────────────────────
   private playerSprite!:    Phaser.GameObjects.Sprite;
   private enemyContainer!:  Phaser.GameObjects.Container;
@@ -141,6 +154,15 @@ export default class BattleScene extends Phaser.Scene {
     this.enemyArmorBreak = 0;
     this.enemyIntentCont = null;
     this.enemyStatusCont = null;
+    // 장비 패시브 초기화
+    this.equipShieldPerTurn  = 0;
+    this.equipHealOnWin      = 0;
+    this.equipHealOnWinPct   = 0;
+    this.equipElemAmplify    = 0;
+    this.equipLifestealPct   = 0;
+    this.equipCardMultOnCrit = 0;
+    this.equipElemAtkBonus   = {};
+    this.equipElemDmgReduce  = {};
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -182,6 +204,9 @@ export default class BattleScene extends Phaser.Scene {
     // 적 의도 및 상태이상 UI
     this.createEnemyIntentUI();
 
+    // 장비 패시브 계산
+    this.applyEquipmentPassives();
+
     // 첫 손패 드로우 (Guardian 패시브도 여기서)
     this.drawHand();
     this.refreshCardDisplay();
@@ -189,6 +214,24 @@ export default class BattleScene extends Phaser.Scene {
 
     // ESC 차단
     this.input.keyboard?.on('keydown-ESC', () => { /* 전투 중 비활성 */ });
+
+    // ── 사운드 재생 ───────────────────────────────────────────────────────────
+    this.playBattleBGM();
+  }
+
+  /** 배틀 타입에 따른 배경음 재생 */
+  private playBattleBGM() {
+    // 기존 배경음 중단
+    this.sound.stopAll();
+
+    let bgmKey = 'bgm_battle_normal';
+    if (this.data_.isFinalBoss) {
+      bgmKey = 'bgm_battle_final';
+    } else if (this.data_.isBoss) {
+      bgmKey = 'bgm_battle_boss';
+    }
+
+    this.sound.play(bgmKey, { loop: true, volume: 0.5 });
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -219,6 +262,40 @@ export default class BattleScene extends Phaser.Scene {
     this.drawPile.forEach((c, idx) => {
       console.log(` - Slot ${idx}: ID=${c.id}, Name=${c.nameKey}, Stars=${c.stars}, Mult=${c.mult}`);
     });
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 장비 패시브 효과 계산 (create 시 한 번만 호출)
+  // ───────────────────────────────────────────────────────────────────────────
+  private applyEquipmentPassives() {
+    const equips = this.data_.playerEquipment ?? [];
+    for (const id of equips) {
+      const eq = getEquipmentById(id);
+      if (!eq) continue;
+
+      // 속성별 공격 보너스
+      if (eq.stats.elementAtkBonus) {
+        for (const [elem, val] of Object.entries(eq.stats.elementAtkBonus)) {
+          this.equipElemAtkBonus[elem] = (this.equipElemAtkBonus[elem] ?? 0) + (val ?? 0);
+        }
+      }
+      // 속성별 피해 감소
+      if (eq.stats.elementDefBonus) {
+        for (const [elem, val] of Object.entries(eq.stats.elementDefBonus)) {
+          this.equipElemDmgReduce[elem] = (this.equipElemDmgReduce[elem] ?? 0) + (val ?? 0);
+        }
+      }
+      // 특수 효과
+      if (!eq.special) continue;
+      switch (eq.special.type) {
+        case 'shield_on_turn_end': this.equipShieldPerTurn  += eq.special.value; break;
+        case 'heal_on_win':        this.equipHealOnWin      += eq.special.value; break;
+        case 'heal_on_win_pct':    this.equipHealOnWinPct   += eq.special.value; break;
+        case 'element_amplify':    this.equipElemAmplify    += eq.special.value; break;
+        case 'lifesteal_pct':      this.equipLifestealPct   += eq.special.value; break;
+        case 'card_mult_on_crit':  this.equipCardMultOnCrit += eq.special.value; break;
+      }
+    }
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -350,15 +427,18 @@ export default class BattleScene extends Phaser.Scene {
     bgBar.setStrokeStyle(1, 0x666666);
     void bgBar;
 
-    // fill
-    const fill = this.add.rectangle(x + barW / 2, cy, barW, barH,
-      isPlayer ? 0x2ecc71 : 0xe74c3c);
+    // fill — 초기 HP 비율 반영
+    const initRatio = isPlayer
+      ? Math.max(0, this.playerCurrentHp / this.data_.playerMaxHp)
+      : 1;
+    const fill = this.add.rectangle(x + barW * initRatio / 2, cy, barW * initRatio, barH,
+      isPlayer ? (initRatio > 0.3 ? 0x2ecc71 : 0xe74c3c) : 0xe74c3c);
     fill.setOrigin(0.5, 0.5);
 
     // HP 텍스트
     const hpTxt = this.add.text(cx, cy + barH + 2,
       isPlayer
-        ? `${this.data_.playerHp} / ${this.data_.playerMaxHp}`
+        ? `${this.playerCurrentHp} / ${this.data_.playerMaxHp}`
         : `${this.enemyMaxHp} / ${this.enemyMaxHp}`,
       { fontFamily: FONT_L, fontSize: '12px', color: '#aaaaaa' },
     ).setOrigin(0.5, 0);
@@ -379,12 +459,12 @@ export default class BattleScene extends Phaser.Scene {
     const cx = this.W * 0.5;
 
     this.turnLabel = this.add.text(cx, this.H * 0.14, `TURN ${this.currentTurn} / ${MAX_TURNS}`, {
-      fontFamily: FONT_B, fontSize: '22px', color: '#d4af37',
+      fontFamily: FONT_B, fontSize: '26px', color: '#d4af37',
     }).setOrigin(0.5);
 
     this.statusText = this.add.text(cx, this.H * 0.65, '', {
-      fontFamily: FONT_M, fontSize: '16px', color: '#cccccc',
-      wordWrap: { width: this.W * 0.35 }, align: 'center',
+      fontFamily: FONT_M, fontSize: '20px', color: '#cccccc',
+      wordWrap: { width: this.W * 0.38 }, align: 'center',
     }).setOrigin(0.5);
 
     // 적 element 정보 (elemental battle 시)
@@ -728,7 +808,10 @@ export default class BattleScene extends Phaser.Scene {
       this.selectedCards[idx] = false;
       this.selectionOrder = this.selectionOrder.filter(i => i !== idx);
     } else {
-      if (this.selectionOrder.length >= 3) return; // 3개까지만 제한
+      if (this.selectionOrder.length >= 3) {
+      AudioManager.play('ERROR');
+      return;
+    }
       this.selectedCards[idx] = true;
       this.selectionOrder.push(idx);
     }
@@ -820,6 +903,7 @@ export default class BattleScene extends Phaser.Scene {
   private async executeCardAction(step: number, cards: CardData[], isFastForward: boolean): Promise<void> {
     return new Promise(resolve => {
       const card = cards[step];
+      AudioManager.play('CARD_PLAY');
       const baseVal = card.value * (card.mult || 1.0) * (this.data_.playerCardMult || 1.0);
       let dmg = 0;
       let heal = 0;
@@ -833,9 +917,12 @@ export default class BattleScene extends Phaser.Scene {
       } else if (card.key === 'hp') {
         heal = baseVal;
       } else if (card.key === 'arrow') {
-        dmg = baseVal;
-        // Ranger 패시브: 화살 카드 2배
-        if (this.data_.characterWeapon === 'bow') dmg *= 2;
+        // Ranger 패시브: 화살 카드 = (ATK + 카드밸류) × mult × cardMult
+        if (this.data_.characterWeapon === 'bow') {
+          dmg = (this.data_.playerAtk + card.value) * (card.mult || 1.0) * (this.data_.playerCardMult || 1.0);
+        } else {
+          dmg = baseVal;
+        }
       } else {
         dmg = baseVal;
       }
@@ -855,6 +942,7 @@ export default class BattleScene extends Phaser.Scene {
         this.playerCurrentHp = Math.min(this.data_.playerMaxHp, this.playerCurrentHp + healAmt);
         this.updatePlayerHpBar();
         this.showFloatingHeal(this.playerSprite.x, this.playerSprite.y - 50, healAmt);
+        AudioManager.play('HEAL');
       }
 
       if (dmg > 0) {
@@ -869,8 +957,12 @@ export default class BattleScene extends Phaser.Scene {
           // 1. 속성 상성 (dmg = baseVal에 패시브 배율 적용된 값)
           let hitDmg = dmg;
           if (card.element !== 'normal') {
-            if (TYPE_BEATS[card.element] === this.data_.mapElement) hitDmg *= 1.5;
+            const amplify = 1 + (this.equipElemAmplify ?? 0);
+            if (TYPE_BEATS[card.element] === this.data_.mapElement) hitDmg *= 1.5 * amplify;
             else if (TYPE_BEATS[this.data_.mapElement] === card.element) hitDmg *= 0.5;
+            // 장비 속성 공격 보너스
+            const elemBonus = this.equipElemAtkBonus[card.element] ?? 0;
+            if (elemBonus > 0) hitDmg *= (1 + elemBonus);
           }
 
           // 2. 취약 (Vulnerable)
@@ -878,8 +970,8 @@ export default class BattleScene extends Phaser.Scene {
 
           // 3. 크리티컬
           let critChance = this.data_.playerCrit;
-          // Berserker 패시브: HP < 50% → 크리 확률 +20%
-          if (this.data_.characterWeapon === 'greatsword' && this.playerCurrentHp < this.data_.playerMaxHp * 0.5) {
+          // Berserker 패시브: HP < 60% → 크리 확률 +20%
+          if (this.data_.characterWeapon === 'greatsword' && this.playerCurrentHp < this.data_.playerMaxHp * 0.6) {
             critChance += 20;
           }
           // Lancer 패시브: spear 카드 항상 크리
@@ -887,11 +979,11 @@ export default class BattleScene extends Phaser.Scene {
 
           const isCrit = Math.random() * 100 < critChance;
           let critDmgMult = this.data_.playerCritDmg;
-          // Berserker 패시브: HP < 50% → 크리뎀 +0.3
-          if (this.data_.characterWeapon === 'greatsword' && this.playerCurrentHp < this.data_.playerMaxHp * 0.5) {
+          // Berserker 패시브: HP < 60% → 크리뎀 +0.3
+          if (this.data_.characterWeapon === 'greatsword' && this.playerCurrentHp < this.data_.playerMaxHp * 0.6) {
             critDmgMult += 0.3;
           }
-          let cardDmg = isCrit ? hitDmg * critDmgMult : hitDmg;
+          let cardDmg = isCrit ? hitDmg * (critDmgMult + (this.equipCardMultOnCrit ?? 0)) : hitDmg;
 
           // 4. 콤보 추뎀
           const sameCards = cards.slice(0, step + 1).filter(c => c.id === card.id);
@@ -949,6 +1041,19 @@ export default class BattleScene extends Phaser.Scene {
             this.updateEnemyHpBar();
             this.playEnemyHit(card.element, isCrit);
             this.showFloatingDamage(this.enemyContainer.x, this.enemyContainer.y - 40, finalDmg, isCrit, '#2ecc71');
+            
+            // 피격 사운드
+        AudioManager.play('HIT');
+
+            // 장비 흡혈 효과
+            if (this.equipLifestealPct > 0) {
+              const lifeSteal = Math.floor(finalDmg * this.equipLifestealPct);
+              if (lifeSteal > 0) {
+                this.playerCurrentHp = Math.min(this.data_.playerMaxHp, this.playerCurrentHp + lifeSteal);
+                this.updatePlayerHpBar();
+                this.showFloatingHeal(this.playerSprite.x, this.playerSprite.y - 50, lifeSteal);
+              }
+            }
 
             // chain 연쇄 추가 피해 표시
             if (chainBonus > 0) {
@@ -990,6 +1095,7 @@ export default class BattleScene extends Phaser.Scene {
           this.playerCurrentHp = Math.min(this.data_.playerMaxHp, this.playerCurrentHp + heal);
           this.updatePlayerHpBar();
           this.statusText.setText(`HP ${Math.floor(heal)} 회복!`).setColor('#2ecc71');
+          this.sound.play('sfx_heal', { volume: 0.6 });
         }
         this.time.delayedCall(isFastForward ? 200 : 450, () => resolve());
       }
@@ -1030,6 +1136,7 @@ export default class BattleScene extends Phaser.Scene {
         
         const critTxt = isCrit ? ' ★CRIT!' : '';
         this.statusText.setText(`마무리 타격! ${this.data_.mobName}에게 ${Math.floor(finalDmg)}${critTxt}`).setColor('#2ecc71');
+        this.sound.play('sfx_hit', { volume: 0.5 });
         this.time.delayedCall(isFastForward ? 200 : 450, () => resolve());
       }, isFastForward);
     });
@@ -1059,6 +1166,9 @@ export default class BattleScene extends Phaser.Scene {
       dashDur = Math.max(40, Math.floor(dashDur * 0.4));
     }
     const elemColor = ELEM_COLORS[elem] ?? 0xffffff;
+
+    // 공격 사운드
+    AudioManager.play('ATTACK');
 
     // 속성 색 tint
     this.playerSprite.setTint(elemColor);
@@ -1171,6 +1281,9 @@ export default class BattleScene extends Phaser.Scene {
     // ── 적 공격력 계산 ───────────────────────────────────────────────────────
     const enemyAtkOriginal = this.enemyAtk;
     let enemyDmg = this.enemyAtk;
+    // 장비 속성 피해 감소
+    const elemReduce = this.equipElemDmgReduce[this.data_.mapElement ?? ''] ?? 0;
+    if (elemReduce > 0) enemyDmg *= Math.max(0, 1 - elemReduce);
     enemyDmg = Math.max(1, Math.floor(enemyDmg * (50 / (50 + this.data_.playerDef))));
     const dmgAfterDef = enemyDmg;
 
@@ -1256,17 +1369,17 @@ export default class BattleScene extends Phaser.Scene {
 
     const txt = this.add.text(x, y, `-${Math.floor(amount)}`, {
       fontFamily: FONT_B,
-      fontSize: isCrit ? '42px' : '28px',
+      fontSize: isCrit ? '58px' : '40px',
       color: color,
       stroke: '#000000',
-      strokeThickness: isCrit ? 6 : 4,
+      strokeThickness: isCrit ? 9 : 6,
       fontStyle: isCrit ? 'italic' : 'normal'
     }).setOrigin(0.5);
 
     // 크리 텍스트
     if (isCrit) {
-      const critObj = this.add.text(x, y - 35, 'CRITICAL!', {
-        fontFamily: FONT_B, fontSize: '20px', color: '#ffcc00', stroke: '#000', strokeThickness: 3
+      const critObj = this.add.text(x, y - 45, 'CRITICAL!', {
+        fontFamily: FONT_B, fontSize: '30px', color: '#ffcc00', stroke: '#000', strokeThickness: 4
       }).setOrigin(0.5);
       
       this.tweens.add({
@@ -1339,6 +1452,18 @@ export default class BattleScene extends Phaser.Scene {
     this.isAnimating = true;
     this.enemyIdleTween?.stop();
 
+    // 장비 승리 시 회복 효과
+    if (playerWon) {
+      let healAmt = this.equipHealOnWin;
+      if (this.equipHealOnWinPct > 0) {
+        healAmt += Math.floor(this.data_.playerMaxHp * this.equipHealOnWinPct);
+      }
+      if (healAmt > 0) {
+        this.playerCurrentHp = Math.min(this.data_.playerMaxHp, this.playerCurrentHp + healAmt);
+        this.updatePlayerHpBar();
+      }
+    }
+
     const resultColor = playerWon ? '#2ecc71' : '#e74c3c';
     const resultText  = playerWon
       ? `승리!\n(적 ${this.data_.mobName} 격파)`
@@ -1346,6 +1471,14 @@ export default class BattleScene extends Phaser.Scene {
 
     this.statusText.setText(resultText).setColor(resultColor);
     this.attackBtn.setVisible(false);
+
+    // BGM 중단 및 결과 사운드 재생
+    this.sound.stopAll();
+    if (playerWon) {
+      AudioManager.play('WIN');
+    } else {
+      AudioManager.play('LOSE');
+    }
 
     // 결과 오버레이 및 팝업
     const overlay = this.add.graphics();
@@ -1427,6 +1560,11 @@ export default class BattleScene extends Phaser.Scene {
       return;
     }
     this.turnLabel.setText(`TURN ${this.currentTurn} / ${MAX_TURNS}`);
+    // 장비 턴마다 쉴드 부여
+    if (this.equipShieldPerTurn > 0) {
+      this.currentTurnDefense += this.equipShieldPerTurn;
+      this.updateShieldBadge();
+    }
     this.drawHand();
     this.refreshCardDisplay();
     this.updateAttackButtonState();
