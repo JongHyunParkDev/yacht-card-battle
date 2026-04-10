@@ -18,23 +18,24 @@ export default class IntroScene extends Phaser.Scene {
     // 1. 가장 뒷 배경 (공통 유틸 사용)
     addFullscreenBackground(this, 'bg1');
 
-    // ── 사운드 재생 ───────────────────────────────────────────────────────────
-    this.sound.stopAll();
-    this.sound.play('bgm_intro', { loop: true, volume: 0.5 });
-
-    this.cameras.main.fadeIn(250, 0, 0, 0);
-
-    // Electron에서 설정 불러와서 언어 적용
+    // ── 설정 로드 (볼륨 포함) → BGM 재생 ────────────────────────────────────
     // @ts-ignore
     if (typeof require !== 'undefined') {
       try {
         const { ipcRenderer } = require('electron');
         const settings = await ipcRenderer.invoke('load-settings');
         i18n.setLanguage(settings.language);
+        if (typeof settings.bgmVolume === 'number') AudioManager.setBgmVolume(settings.bgmVolume);
+        if (typeof settings.sfxVolume === 'number') AudioManager.setSfxVolume(settings.sfxVolume);
       } catch (e) {
         console.error('설정 로드 실패:', e);
       }
     }
+
+    this.sound.stopAll();
+    this.sound.play('bgm_intro', { loop: true, volume: AudioManager.bgmVol });
+
+    this.cameras.main.fadeIn(250, 0, 0, 0);
 
     // CSS 테마 연결
     const primaryColor = getCssColor('--medieval-primary', '#d4af37'); 
@@ -117,6 +118,7 @@ export default class IntroScene extends Phaser.Scene {
           button.setColor(textColor).setScale(1).setX(100);
         });
         button.on('pointerdown', () => {
+          AudioManager.play('CLICK');
           button.setScale(0.95);
           onClick();
         });

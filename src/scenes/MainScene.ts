@@ -241,7 +241,7 @@ export default class MainScene extends Phaser.Scene {
   private playMainBGM() {
     if (!this.sound.get('bgm_main')?.isPlaying) {
       this.sound.stopAll();
-      this.sound.play('bgm_main', { loop: true, volume: 0.4 });
+      this.sound.play('bgm_main', { loop: true, volume: AudioManager.bgmVol });
     }
   }
 
@@ -1022,7 +1022,7 @@ export default class MainScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setInteractive({ useHandCursor: true });
 
-    btn.on('pointerdown', onDown);
+    btn.on('pointerdown', () => { AudioManager.play('CLICK'); onDown(); });
     btn.on('pointerover', () => btn.setColor('#ffdb58').setScale(1.05));
     btn.on('pointerout',  () => btn.setColor('#e6d8b8').setScale(1));
     return btn;

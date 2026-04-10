@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { i18n } from '@src/utils/localization';
 import { getEquipmentById, formatEquipStats, EQUIP_GRADE_COLOR, EQUIP_GRADE_LABEL } from '@src/data/equipmentData';
+import { AudioManager } from '@src/utils/Audio';
 import '@src/styles/colors.css';
 
 // ─── 타입 / 상수 ──────────────────────────────────────────────────────────────
@@ -151,7 +152,7 @@ export default class CharacterSelectScene extends Phaser.Scene {
     // ── 사운드 재생 ───────────────────────────────────────────────────────────
     if (!this.sound.get('bgm_intro')?.isPlaying) {
       this.sound.stopAll();
-      this.sound.play('bgm_intro', { loop: true, volume: 0.5 });
+      this.sound.play('bgm_intro', { loop: true, volume: AudioManager.bgmVol });
     }
 
     this.cameras.main.fadeIn(250, 0, 0, 0);
@@ -301,7 +302,7 @@ export default class CharacterSelectScene extends Phaser.Scene {
         }
         this.hideCharTooltip();
       });
-      container.on('pointerdown', () => this.selectCharacter(idx));
+      container.on('pointerdown', () => { AudioManager.play('CLICK'); this.selectCharacter(idx); });
 
       this.cardContainers.push(container);
     });
@@ -489,6 +490,7 @@ export default class CharacterSelectScene extends Phaser.Scene {
         this.equipTooltip.setVisible(false);
       });
       cont.on('pointerdown', () => {
+        AudioManager.play('CLICK');
         this.selectedEquip = this.selectedEquip === eq ? null : eq;
         redraws.forEach(fn => fn());
       });
@@ -558,6 +560,7 @@ export default class CharacterSelectScene extends Phaser.Scene {
     this.startBtn.on('pointerover',  () => this.startBtn.setBackgroundColor('#f5cc4a'));
     this.startBtn.on('pointerout',   () => this.startBtn.setBackgroundColor('#d4af37'));
     this.startBtn.on('pointerdown',  () => {
+      AudioManager.play('REWARD');
       const char = CHARACTERS[this.selectedIndex];
       this.cameras.main.fadeOut(200, 0, 0, 0);
       this.cameras.main.once('camerafadeoutcomplete', () => {
@@ -579,6 +582,7 @@ export default class CharacterSelectScene extends Phaser.Scene {
     backBtn.on('pointerover', () => backBtn.setColor('#d4af37'));
     backBtn.on('pointerout',  () => backBtn.setColor('#8a7060'));
     backBtn.on('pointerdown', () => {
+      AudioManager.play('CLICK');
       this.cameras.main.fadeOut(200, 0, 0, 0);
       this.cameras.main.once('camerafadeoutcomplete', () => {
         this.scene.start('IntroScene');

@@ -234,7 +234,7 @@ export default class NodeEventScene extends Phaser.Scene {
     this.tweens.add({ targets: popup, alpha: 0, y: 30, duration: 400, delay: 1500, onComplete: () => popup.destroy() });
 
     // 보상 획득 사운드
-    this.sound.play('sfx_reward', { volume: 0.5 });
+    AudioManager.play('REWARD');
   }
 
   private scrollCont: Phaser.GameObjects.Container | null = null;
@@ -310,7 +310,7 @@ export default class NodeEventScene extends Phaser.Scene {
 
   private createEnhanceEvent() {
     this.sound.stopAll();
-    this.sound.play('bgm_event_enhance', { loop: true, volume: 0.4 });
+    this.sound.play('bgm_event_enhance', { loop: true, volume: AudioManager.bgmVol });
 
     const H = this.H;
     const W = this.W;
@@ -370,7 +370,7 @@ export default class NodeEventScene extends Phaser.Scene {
 
   private createTreasureEvent() {
     this.sound.stopAll();
-    this.sound.play('bgm_event_treasure', { loop: true, volume: 0.4 });
+    this.sound.play('bgm_event_treasure', { loop: true, volume: AudioManager.bgmVol });
 
     const H = this.H;
     const W = this.W;
@@ -607,7 +607,7 @@ export default class NodeEventScene extends Phaser.Scene {
 
   private createCardFlipEvent() {
     this.sound.stopAll();
-    this.sound.play('bgm_event_flip', { loop: true, volume: 0.4 });
+    this.sound.play('bgm_event_flip', { loop: true, volume: AudioManager.bgmVol });
 
     const H = this.H;
     const W = this.W;
@@ -691,6 +691,7 @@ export default class NodeEventScene extends Phaser.Scene {
         onComplete: () => {
           this.root.removeAll(true);
           this.root.setAlpha(1);
+          AudioManager.play('COIN');
           const resTitle = this.makeHeader('row0_4', '골드 획득!', -H * 0.35);
           const goldTxt  = this.add.text(0, -H * 0.1, `+${currentGold}G`, {
             fontFamily: FONT_B, fontSize: '48px', color: '#f5cc4a', stroke: '#000', strokeThickness: 4
@@ -770,7 +771,7 @@ export default class NodeEventScene extends Phaser.Scene {
 
   private createCardSwapEvent() {
     this.sound.stopAll();
-    this.sound.play('bgm_event_swap', { loop: true, volume: 0.4 });
+    this.sound.play('bgm_event_swap', { loop: true, volume: AudioManager.bgmVol });
 
     const H = this.H, W = this.W;
     const ELEMENTS: CardElement[]           = ['water', 'fire', 'grass', 'lightning', 'earth'];
@@ -887,7 +888,7 @@ export default class NodeEventScene extends Phaser.Scene {
 
   private createHeartEvent() {
     this.sound.stopAll();
-    this.sound.play('bgm_event_heart', { loop: true, volume: 0.4 });
+    this.sound.play('bgm_event_heart', { loop: true, volume: AudioManager.bgmVol });
 
     const H = this.H;
     const W = this.W;
@@ -951,7 +952,7 @@ export default class NodeEventScene extends Phaser.Scene {
 
   private createShieldEvent() {
     this.sound.stopAll();
-    this.sound.play('bgm_event_shield', { loop: true, volume: 0.4 });
+    this.sound.play('bgm_event_shield', { loop: true, volume: AudioManager.bgmVol });
 
     const H = this.H;
     const W = this.W;
@@ -1127,7 +1128,7 @@ export default class NodeEventScene extends Phaser.Scene {
 
   private createStarEvent() {
     this.sound.stopAll();
-    this.sound.play('bgm_event_star', { loop: true, volume: 0.4 });
+    this.sound.play('bgm_event_star', { loop: true, volume: AudioManager.bgmVol });
 
     const H = this.H;
     const W = this.W;
@@ -1381,7 +1382,7 @@ export default class NodeEventScene extends Phaser.Scene {
 
   private createIndianPokerEvent() {
     this.sound.stopAll();
-    this.sound.play('bgm_event_poker', { loop: true, volume: 0.4 });
+    this.sound.play('bgm_event_poker', { loop: true, volume: AudioManager.bgmVol });
 
     const H = this.H;
     const W = this.W;
@@ -1698,7 +1699,7 @@ export default class NodeEventScene extends Phaser.Scene {
 
   private createDeckPurificationEvent() {
     this.sound.stopAll();
-    this.sound.play('bgm_event_poker', { loop: true, volume: 0.4 });
+    this.sound.play('bgm_event_poker', { loop: true, volume: AudioManager.bgmVol });
 
     const H = this.H, W = this.W;
     const ELEM_OFFSET: Record<string, number> = { water:0, fire:5, grass:10, lightning:15, earth:20 };

@@ -189,20 +189,20 @@ export default class PreloadScene extends Phaser.Scene {
 
     // ── 오디오 에셋 로드 ────────────────────────────────────────────────────────
     // BGM
-    const bgmPath = 'src/assets/sound/bgm/';
-    this.load.audio('bgm_intro',          [`${bgmPath}bgm_intro.mp3`]);
-    this.load.audio('bgm_main',           [`${bgmPath}bgm_main.mp3`]);
-    this.load.audio('bgm_battle_normal',  [`${bgmPath}bgm_battle_normal.mp3`]);
-    this.load.audio('bgm_battle_boss',    [`${bgmPath}bgm_battle_boss.mp3`]);
-    this.load.audio('bgm_battle_final',   [`${bgmPath}bgm_battle_final.mp3`]);
-    this.load.audio('bgm_event_enhance',  [`${bgmPath}bgm_event_enhance.mp3`]);
-    this.load.audio('bgm_event_treasure', [`${bgmPath}bgm_event_treasure.mp3`]);
-    this.load.audio('bgm_event_flip',     [`${bgmPath}bgm_event_flip.mp3`]);
-    this.load.audio('bgm_event_swap',     [`${bgmPath}bgm_event_swap.mp3`]);
-    this.load.audio('bgm_event_heart',    [`${bgmPath}bgm_event_heart.mp3`]);
-    this.load.audio('bgm_event_shield',   [`${bgmPath}bgm_event_shield.mp3`]);
-    this.load.audio('bgm_event_star',     [`${bgmPath}bgm_event_star.mp3`]);
-    this.load.audio('bgm_event_poker',    [`${bgmPath}bgm_event_poker.mp3`]);
+    const bgmPath = 'src/assets/sound/';
+    this.load.audio('bgm_intro',          [`${bgmPath}01.intro.mp3`]);
+    this.load.audio('bgm_main',           [`${bgmPath}02.main.mp3`]);
+    this.load.audio('bgm_battle_normal',  [`${bgmPath}03.battle.mp3`]);
+    this.load.audio('bgm_battle_boss',    [`${bgmPath}04.boss.mp3`]);
+    this.load.audio('bgm_battle_final',   [`${bgmPath}05.final_boss.mp3`]);
+    this.load.audio('bgm_event_enhance',  [`${bgmPath}06.enhance.mp3`]);
+    this.load.audio('bgm_event_treasure', [`${bgmPath}07.treasure.mp3`]);
+    this.load.audio('bgm_event_flip',     [`${bgmPath}08.flip.mp3`]);
+    this.load.audio('bgm_event_swap',     [`${bgmPath}09.swap.mp3`]);
+    this.load.audio('bgm_event_heart',    [`${bgmPath}10.heart.mp3`]);
+    this.load.audio('bgm_event_shield',   [`${bgmPath}11.shield.mp3`]);
+    this.load.audio('bgm_event_star',     [`${bgmPath}12.star.mp3`]);
+    this.load.audio('bgm_event_poker',    [`${bgmPath}13.poker.mp3`]);
   }
 
   create() {
