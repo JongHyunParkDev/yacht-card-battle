@@ -90,7 +90,7 @@ export default class CardGalleryScene extends Phaser.Scene {
   }
 
   private drawHeader(w: number) {
-    const g = this.add.graphics();
+    const g = this.add.graphics().setDepth(60);
     g.fillStyle(PANEL_COLOR, 1);
     g.fillRect(0, 0, w, 54);
     g.lineStyle(1, GOLD, 0.6);
@@ -98,7 +98,7 @@ export default class CardGalleryScene extends Phaser.Scene {
 
     this.add.text(w / 2, 27, i18n.t('cardGallery'), {
       fontFamily: 'SBAggroB', fontSize: '22px', color: GOLD_HEX,
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setDepth(60);
   }
 
   private drawTabs(w: number) {
@@ -107,7 +107,7 @@ export default class CardGalleryScene extends Phaser.Scene {
     const totalW = tabW * TABS.length;
     const startX = (w - totalW) / 2;
 
-    this.tabBg = this.add.graphics();
+    this.tabBg = this.add.graphics().setDepth(60);
     this.tabTextObjs = [];
 
     TABS.forEach((tab, idx) => {
@@ -120,7 +120,7 @@ export default class CardGalleryScene extends Phaser.Scene {
       const btn = this.add.text(tx, tabY, i18n.t(tab.labelKey), {
         fontFamily: 'SBAggroM', fontSize: '11px',
         color: isActive ? '#000000' : DIM_HEX,
-      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+      }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(60);
 
       btn.on('pointerdown', () => {
         if (tab.element === this.activeTab) return;
@@ -202,6 +202,11 @@ export default class CardGalleryScene extends Phaser.Scene {
     this.maskGfx.fillStyle(0xffffff, 1);
     this.maskGfx.fillRect(0, CARD_AREA_TOP, w, visibleH);
     this.cardContainer.setMask(this.maskGfx.createGeometryMask());
+
+    // 마스크는 렌더링만 가림 — 탭/헤더 영역 위에 투명 click-block 레이어 추가
+    const topBlock = this.add.zone(0, 0, w, CARD_AREA_TOP).setOrigin(0, 0).setDepth(50);
+    topBlock.setInteractive();
+    // 이벤트를 흡수만 하고 아무것도 하지 않음 (카드 hit 차단)
   }
 
   private drawBackButton(w: number, h: number) {

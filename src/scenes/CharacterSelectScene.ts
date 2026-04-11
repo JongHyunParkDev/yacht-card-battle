@@ -135,6 +135,12 @@ export default class CharacterSelectScene extends Phaser.Scene {
   async create() {
     const { width, height } = this.scale;
 
+    // ── 사운드 재생 (await 이전에 즉시 재생) ──────────────────────────────────
+    if (!this.sound.get('bgm_intro')?.isPlaying) {
+      this.sound.stopAll();
+      this.sound.play('bgm_intro', { loop: true, volume: AudioManager.bgmVol });
+    }
+
     // legacy 장비 컬렉션 로드
     // @ts-ignore
     if (typeof require !== 'undefined') {
@@ -148,12 +154,6 @@ export default class CharacterSelectScene extends Phaser.Scene {
     }
 
     this.buildBackground(width, height);
-    
-    // ── 사운드 재생 ───────────────────────────────────────────────────────────
-    if (!this.sound.get('bgm_intro')?.isPlaying) {
-      this.sound.stopAll();
-      this.sound.play('bgm_intro', { loop: true, volume: AudioManager.bgmVol });
-    }
 
     this.cameras.main.fadeIn(250, 0, 0, 0);
     this.buildTitle(width, height);

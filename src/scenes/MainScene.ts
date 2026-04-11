@@ -8,7 +8,7 @@ import type { CardData } from '@src/data/cardData';
 import Card, { CARD_WIDTH, CARD_HEIGHT } from '@src/objects/Card';
 import { getEquipmentById, formatEquipStats, EQUIP_GRADE_COLOR, EQUIP_GRADE_LABEL } from '@src/data/equipmentData';
 
-interface DeckEntry { card: CardData; count: number; }
+interface DeckEntry { card: CardData; count: number; mult?: number; stars?: number; bonusValue?: number; }
 
 interface SaveState {
   mapHash: string;
@@ -22,11 +22,14 @@ interface SaveState {
   playerCardMult?: number;
   playerShieldMult?: number;
   characterId?: string;
-  deck?: { cardId: number; count: number }[];
+  deck?: { cardId: number; count: number; mult?: number; stars?: number; bonusValue?: number }[];
   equipment?: string[];
   maxEquipSlots?: number;
   cardMultipliers?: Record<number, number>;
+  // 레거시 필드 (이전 세이브 마이그레이션용, 신규 저장 시 미사용)
   normalCardStars?: Record<number, number>;
+  normalCardBonusValues?: Record<number, number>;
+  completedElements?: string[];
 }
 
 // ─── 상수 ─────────────────────────────────────────────────────────────────────
@@ -93,8 +96,8 @@ export default class MainScene extends Phaser.Scene {
   private playerEquipment: string[] = [];
   private maxEquipSlots    = 1;
   private mapHash          = '';
-  private cardMultipliers: Record<number, number> = {}; // 런타임 개별 카드 배율
-  private normalCardStars: Record<number, number> = {}; // 일반 카드 별 강화 횟수
+  private cardMultipliers: Record<number, number> = {}; // 런타임 개별 카드 배율 (enhance 이벤트)
+  private completedElements: string[] = []; // 클리어한 속성 맵 목록
 
   // ── 게임 오브젝트 참조 ────────────────────────────────────────────────────────
   private playerToken!: Phaser.GameObjects.Arc;
@@ -122,8 +125,20 @@ export default class MainScene extends Phaser.Scene {
   }
 
   async create() {
+    // scene.restart()는 인스턴스를 유지하므로 상태 플래그를 명시적으로 초기화
+    this.isPaused = false;
+    this.isMoving = false;
+    this.isReady  = false;
+
     const { width, height } = this.scale;
     const mapWorldWidth = Math.max(width, 1000);
+
+    // ── BGM 즉시 강제 재생 (씬 start/restart 시 항상 새로 시작, isPlaying 체크 안 함)
+    this.sound.stopAll();
+    this.time.delayedCall(50, () => {
+      this.sound.play('bgm_main', { loop: true, volume: AudioManager.bgmVol });
+    });
+    this.events.on('resume', () => this.playMainBGM()); // resume은 isPlaying 체크 사용
 
     this.initCamera(mapWorldWidth);
     this.initBackground(mapWorldWidth);
@@ -158,8 +173,8 @@ export default class MainScene extends Phaser.Scene {
     this.maxEquipSlots    = state.maxEquipSlots  ?? 1;
     this.playerCardMult   = state.playerCardMult   ?? 1.0;
     this.playerShieldMult = state.playerShieldMult ?? 1.0;
-    this.cardMultipliers  = state.cardMultipliers || {};
-    this.normalCardStars  = state.normalCardStars  || {};
+    this.cardMultipliers   = state.cardMultipliers || {};
+    this.completedElements = (state as any).completedElements || [];
     this.currentMapElement = (state as any).mapElement ?? 'water';
 
     // 만약 새 게임(isContinue === false)이고 초기 장비가 존재한다면, 해당 장비의 스탯을 기본 스탯에 적용
@@ -197,9 +212,19 @@ export default class MainScene extends Phaser.Scene {
     this.updateNodesVisibility(allNodes, nodeSpritesMap, true);
 
     if (state.deck && state.deck.length > 0) {
+      // 레거시 세이브 마이그레이션: normalCardStars/normalCardBonusValues → per-entry
+      const legacyStars   = state.normalCardStars      || {};
+      const legacyBonus   = state.normalCardBonusValues || {};
       this.playerDeck = state.deck
-        .map(e => ({ card: CARD_DATA_LIST.find(c => c.id === e.cardId)!, count: e.count }))
-        .filter(e => e.card != null);
+        .map(e => {
+          const card = CARD_DATA_LIST.find(c => c.id === e.cardId);
+          if (!card) return null;
+          const stars      = e.stars      ?? (card.element === 'normal' ? (legacyStars[e.cardId] || 0)  : undefined);
+          const bonusValue = e.bonusValue ?? (card.element === 'normal' ? (legacyBonus[e.cardId] || 0)  : undefined);
+          const mult       = e.mult       ?? undefined;
+          return { card, count: e.count, mult, stars, bonusValue } as DeckEntry;
+        })
+        .filter((e): e is DeckEntry => e !== null);
     } else {
       this.buildInitialDeck();
     }
@@ -230,10 +255,6 @@ export default class MainScene extends Phaser.Scene {
 
     // 노드 클릭 이벤트 등록 (allNodes, nodeSpritesMap 클로저로 사용)
     this.registerNodeClickEvents(allNodes, nodeSpritesMap);
-    
-    // ── 사운드 재생 ───────────────────────────────────────────────────────────
-    this.playMainBGM();
-    this.events.on('resume', () => this.playMainBGM());
 
     this.isReady = true;
   }
@@ -352,6 +373,7 @@ export default class MainScene extends Phaser.Scene {
     };
     const elements = ['fire', 'water', 'grass', 'earth', 'lightning'];
     (state as any).mapElement = elements[Math.floor(Math.random() * elements.length)];
+    (state as any).completedElements = [];
     await this.saveToElectron(state);
     return state;
   }
@@ -368,14 +390,17 @@ export default class MainScene extends Phaser.Scene {
       playerCrit:    this.playerCrit,
       playerCritDmg: this.playerCritDmg,
       characterId:   this.character?.id,
-      deck:             this.playerDeck.map(e => ({ cardId: e.card.id, count: e.count })),
+      deck:             this.playerDeck.map(e => ({
+        cardId: e.card.id, count: e.count,
+        mult: e.mult, stars: e.stars, bonusValue: e.bonusValue,
+      })),
       equipment:        this.playerEquipment,
       maxEquipSlots:    this.maxEquipSlots,
       playerCardMult:   this.playerCardMult,
       playerShieldMult: this.playerShieldMult,
       cardMultipliers:  this.cardMultipliers,
-      normalCardStars:  this.normalCardStars,
     };
+    (state as any).completedElements = this.completedElements;
     (state as any).mapElement = this.currentMapElement; // mapElement 저장
     await this.saveToElectron(state);
   }
@@ -722,6 +747,9 @@ export default class MainScene extends Phaser.Scene {
     const SLOT_Y0   = topY + 18;
     const equipG    = this.add.graphics();
 
+    // 슬롯 스프라이트/존/텍스트를 먼저 수집해 equipG 뒤에 추가 (Z-order: 배경 → 아이콘)
+    const equipOverlays: Phaser.GameObjects.GameObject[] = [];
+
     for (let s = 0; s < this.maxEquipSlots; s++) {
       const sx    = SLOT_X0 + s * (SLOT_SIZE + SLOT_GAP);
       const sy    = SLOT_Y0;
@@ -734,7 +762,7 @@ export default class MainScene extends Phaser.Scene {
       equipG.strokeRoundedRect(sx, sy, SLOT_SIZE, SLOT_SIZE, 5);
 
       if (empty) {
-        this.deckWindowContainer.add(
+        equipOverlays.push(
           this.add.text(sx + SLOT_SIZE / 2, sy + SLOT_SIZE / 2, '+', {
             fontFamily: 'SBAggroM', fontSize: '16px', color: '#445566',
           }).setOrigin(0.5)
@@ -744,12 +772,11 @@ export default class MainScene extends Phaser.Scene {
         if (equip) {
           const sprite = this.add.sprite(sx + SLOT_SIZE / 2, sy + SLOT_SIZE / 2, equip.texture, equip.frame);
           sprite.setDisplaySize(SLOT_SIZE - 4, SLOT_SIZE - 4);
-          this.deckWindowContainer.add(sprite);
+          equipOverlays.push(sprite);
 
-          // Interaction zone
           const zone = this.add.zone(sx + SLOT_SIZE / 2, sy + SLOT_SIZE / 2, SLOT_SIZE, SLOT_SIZE);
           zone.setInteractive({ useHandCursor: true });
-          this.deckWindowContainer.add(zone);
+          equipOverlays.push(zone);
 
           const gradeColor = EQUIP_GRADE_COLOR[equip.grade];
           const gradeLabel = EQUIP_GRADE_LABEL[equip.grade];
@@ -765,17 +792,12 @@ export default class MainScene extends Phaser.Scene {
             equipTooltipBg.lineStyle(1.5, parseInt(gradeColor.replace('#', '0x')), 1);
             equipTooltipBg.fillRoundedRect(0, 0, b.width + 20, b.height + 20, 5);
             equipTooltipBg.strokeRoundedRect(0, 0, b.width + 20, b.height + 20, 5);
-            
-            let tx = sx + SLOT_SIZE + 5;
-            let ty = sy;
-            equipTooltip.setPosition(tx, ty);
+            equipTooltip.setPosition(sx + SLOT_SIZE + 5, sy);
           });
           zone.on('pointerout', () => equipTooltip.setVisible(false));
         }
       }
     }
-
-    this.deckWindowContainer.add(equipTooltip);
 
     // 캐릭터 이름
     const accentColor = char ? WEAPON_COLORS[char.weapon].accent : '#888888';
@@ -858,7 +880,8 @@ export default class MainScene extends Phaser.Scene {
         const cx  = rightX + cardGap + col * (scaledW + cardGap);
         const cy  = cardAreaStartY + row * (scaledH + cardGap);
 
-        const card = new Card(this, cx, cy, entry.card);
+        const totalMult = parseFloat(((entry.mult || 1.0) * (this.cardMultipliers[entry.card.id] || 1.0) * this.playerCardMult).toFixed(4));
+        const card = new Card(this, cx, cy, { ...entry.card, mult: totalMult, bonusValue: entry.bonusValue }, entry.stars);
         card.setScale(cardScale);
         card.setInteractive(
           new Phaser.Geom.Rectangle(0, 0, CARD_WIDTH, CARD_HEIGHT),
@@ -870,7 +893,7 @@ export default class MainScene extends Phaser.Scene {
           this.tweens.add({ targets: card, scaleX: cardScale * 1.18, scaleY: cardScale * 1.18, duration: 110, ease: 'Sine.easeOut' });
         });
         card.on('pointerdown', () => {
-          this.showCardDetailPopup(entry.card);
+          this.showCardDetailPopup({ ...entry.card, mult: totalMult, bonusValue: entry.bonusValue }, entry.stars);
         });
         card.on('pointerout', () => {
           this.tweens.add({ targets: card, scaleX: cardScale, scaleY: cardScale, duration: 110, ease: 'Sine.easeOut' });
@@ -886,11 +909,13 @@ export default class MainScene extends Phaser.Scene {
       panelBg, panelBlockZone,
       handleGraphics, handleText, handleZone,
       leftTitleTxt, charNameTxt, statG, ...statTexts,
-      equipG,
+      equipG, ...equipOverlays,
       deckTitleTxt, ...deckCards,
     ];
     if (charImg) items.push(charImg);
     this.deckWindowContainer.add(items);
+    // 툴팁은 모든 요소 위에 렌더링되도록 마지막에 추가
+    this.deckWindowContainer.add(equipTooltip);
 
     // ── 토글 ──────────────────────────────────────────────────────────────────
     let isPanelOpen = false;
@@ -920,7 +945,7 @@ export default class MainScene extends Phaser.Scene {
     g.fillRoundedRect(x, y, DECK_PANEL_HANDLE_W, DECK_PANEL_HANDLE_H, HANDLE_RADIUS);
   }
 
-  private showCardDetailPopup(cardData: CardData) {
+  private showCardDetailPopup(cardData: CardData, overrideStars?: number) {
     const { width, height } = this.scale;
     const popX = Math.round(width / 2);
     const popY = Math.round(height / 2);
@@ -938,7 +963,7 @@ export default class MainScene extends Phaser.Scene {
 
     const PREVIEW_SCALE = 2.2;
     // ── 카드 미리보기 ──
-    const previewCard = new Card(this, (-CARD_WIDTH / 2) * PREVIEW_SCALE, (-CARD_HEIGHT / 2) * PREVIEW_SCALE, cardData);
+    const previewCard = new Card(this, (-CARD_WIDTH / 2) * PREVIEW_SCALE, (-CARD_HEIGHT / 2) * PREVIEW_SCALE, cardData, overrideStars);
     previewCard.setScale(PREVIEW_SCALE);
     popup.add(previewCard);
 
@@ -1252,7 +1277,7 @@ export default class MainScene extends Phaser.Scene {
         if (layer === 0) {
           nodeType = 0;
         } else if (isBossLayer) {
-          const bossTypes: Record<string, number> = { water: 11, fire: 12, grass: 13, lightning: 15, earth: 16 };
+          const bossTypes: Record<string, number> = { water: 11, fire: 12, grass: 13, lightning: 15, earth: 16, final: 18 };
           nodeType = bossTypes[this.currentMapElement] ?? 11;
         } else {
           nodeType = layerTypes![i];
@@ -1346,10 +1371,11 @@ export default class MainScene extends Phaser.Scene {
       maxEquipSlots:   this.maxEquipSlots,
       characterWeapon: this.character?.weapon ?? 'swordShield',
       deck:            this.playerDeck.map(e => ({
-        cardId: e.card.id,
-        count:  e.count,
-        mult:   this.cardMultipliers[e.card.id] || 1.0,
-        stars:  e.card.element === 'normal' ? (this.normalCardStars[e.card.id] || 0) : undefined,
+        cardId:     e.card.id,
+        count:      e.count,
+        mult:       parseFloat(((e.mult || 1.0) * (this.cardMultipliers[e.card.id] || 1.0)).toFixed(4)),
+        stars:      e.stars,
+        bonusValue: e.bonusValue,
       })),
     });
 
@@ -1392,17 +1418,37 @@ export default class MainScene extends Phaser.Scene {
       }
       if (typeof result.upgradeNormalStarCardId === 'number') {
         const cid = result.upgradeNormalStarCardId as number;
-        const cur = this.normalCardStars[cid] || 0;
-        if (cur < 5) {
-          this.normalCardStars[cid] = cur + 1;
-          this.cardMultipliers[cid] = parseFloat(((this.cardMultipliers[cid] || 1.0) * 1.25).toFixed(4));
+        // 카드 타입별 기본값 보너스: attack/defense/hp +5, spear +3, arrow +2
+        const BONUS_PER_STAR: Record<number, number> = { 25: 5, 26: 5, 27: 3, 28: 2, 29: 5 };
+        const bonusAmt = BONUS_PER_STAR[cid] ?? 3;
+        // 가장 낮은 별 등급의 복사본 1장만 업그레이드 (★5 미만)
+        const candidates = this.playerDeck
+          .filter(e => e.card.id === cid && (e.stars || 0) < 5)
+          .sort((a, b) => (a.stars || 0) - (b.stars || 0));
+        if (candidates.length > 0) {
+          const src       = candidates[0];
+          const newStars  = (src.stars || 0) + 1;
+          const newBonus  = (src.bonusValue || 0) + bonusAmt;
+          const newMult   = parseFloat(((src.mult || 1.0) * 1.25).toFixed(4));
+          if (src.count > 1) {
+            src.count--;
+          } else {
+            this.playerDeck.splice(this.playerDeck.indexOf(src), 1);
+          }
+          const existing = this.playerDeck.find(e => e.card.id === cid && (e.stars || 0) === newStars);
+          if (existing) {
+            existing.count++;
+          } else {
+            this.playerDeck.push({ card: src.card, count: 1, mult: newMult, stars: newStars, bonusValue: newBonus });
+          }
         }
       }
       if (typeof result.pokerCard === 'number' && result.pokerCard > 0) {
         this.addPokerCard(result.pokerCard);
       }
       if (typeof result.cardValueMultiplier === 'number') {
-        this.playerCardMult = parseFloat((this.playerCardMult * result.cardValueMultiplier).toFixed(4));
+        // 가산식: 기본값 × (누적된 배율) 방식 — 두 번 방문 시 ×2+×2=×3 (기본 5 → 10 → 15)
+        this.playerCardMult = parseFloat((this.playerCardMult + (result.cardValueMultiplier - 1)).toFixed(4));
       }
       if (typeof result.shieldMultiplier === 'number') {
         this.playerShieldMult = parseFloat((this.playerShieldMult * result.shieldMultiplier).toFixed(4));
@@ -1420,6 +1466,46 @@ export default class MainScene extends Phaser.Scene {
         this.saveLegacyData(node.layer).then(() => {
           this.clearSaveAndReturn();
         });
+        return;
+      }
+
+      // 보스 처치 → 다음 스테이지 맵 생성
+      const isBossVictory = result.battleResult === 'win' &&
+        (BOSS_NODE_TYPES.includes(node.type) || node.type === 18);
+      if (isBossVictory) {
+        // restart 전 플래그 리셋 (restart는 인스턴스를 재생성하지 않으므로 직접 초기화)
+        this.isPaused  = false;
+        this.isMoving  = false;
+        this.isReady   = false;
+        if (node.type === 18) {
+          // 최종 보스 클리어 → 게임 클리어 (일단 처음으로)
+          this.completedElements = [];
+          this.currentMapElement = 'water';
+          this.mapHash = `stage_${Date.now()}_${Math.floor(Math.random() * 999999)}`;
+          this.currentNodeId = -1;
+          this.saveGameState().then(() => {
+            this.scene.restart({ isContinue: true, character: this.character });
+          });
+        } else {
+          // 일반 보스 처치: 현재 속성 기록 후 다음 맵 결정
+          if (!this.completedElements.includes(this.currentMapElement)) {
+            this.completedElements.push(this.currentMapElement);
+          }
+          const ALL_ELEMENTS = ['water', 'fire', 'grass', 'lightning', 'earth'];
+          if (this.completedElements.length >= 3) {
+            // 3개 맵 완료 → 최종 보스 맵
+            this.currentMapElement = 'final';
+          } else {
+            // 아직 클리어 안 한 속성 중 랜덤 선택
+            const remaining = ALL_ELEMENTS.filter(e => !this.completedElements.includes(e));
+            this.currentMapElement = remaining[Math.floor(Math.random() * remaining.length)];
+          }
+          this.mapHash = `stage_${Date.now()}_${Math.floor(Math.random() * 999999)}`;
+          this.currentNodeId = -1;
+          this.saveGameState().then(() => {
+            this.scene.restart({ isContinue: true, character: this.character });
+          });
+        }
         return;
       }
 

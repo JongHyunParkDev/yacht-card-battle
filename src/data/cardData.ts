@@ -50,6 +50,8 @@ export interface CardData {
   value: number;
   /** 인게임 적용 배율 (런타임 추가) */
   mult: number;
+  /** 일반 카드 별 강화로 누적된 기본값 보너스 (런타임 추가) */
+  bonusValue?: number;
   /** 별 등급별 고유 추가 효과 */
   effects?: CardEffect[];
 }

@@ -28,7 +28,7 @@ export interface NodeEventData {
   maxEquipSlots:   number;
   // 전투 이벤트용 추가 필드
   characterWeapon: WeaponType;
-  deck:            { cardId: number; count: number; mult?: number; stars?: number }[];
+  deck:            { cardId: number; count: number; mult?: number; stars?: number; bonusValue?: number }[];
   playerCardMult:  number;
   playerShieldMult: number;
 }
@@ -906,9 +906,9 @@ export default class NodeEventScene extends Phaser.Scene {
 
     // 희생 티어 정의
     const tiers = [
-      { hpCost: 5,  mult: 1.2, label: '소 희생  −5 HP  →  ×1.2', color: 0x8b4513 },
-      { hpCost: 10, mult: 1.5, label: '중 희생  −10 HP  →  ×1.5', color: 0x8b0000 },
-      { hpCost: 20, mult: 2.0, label: '대 희생  −20 HP  →  ×2.0', color: 0x4a0000 },
+      { hpCost: 5,  mult: 1.05, label: '소 희생  −5 HP  →  +5%', color: 0x8b4513 },
+      { hpCost: 10, mult: 1.10, label: '중 희생  −10 HP  →  +10%', color: 0x8b0000 },
+      { hpCost: 20, mult: 1.20, label: '대 희생  −20 HP  →  +20%', color: 0x4a0000 },
     ];
 
     const BW = Math.round(W * 0.40);
@@ -925,7 +925,7 @@ export default class NodeEventScene extends Phaser.Scene {
           AudioManager.play('UPGRADE');
           const resTitle = this.makeHeader('row1_1', '제단 강화 완료!', -H * 0.20);
           const resDesc  = this.add.text(0, -H * 0.04,
-            `HP  ${playerHp}  →  ${Math.max(1, playerHp - tier.hpCost)}\n모든 카드 밸류  ×${tier.mult.toFixed(1)}`, {
+            `HP  ${playerHp}  →  ${Math.max(1, playerHp - tier.hpCost)}\n모든 카드 밸류  +${((tier.mult - 1) * 100).toFixed(0)}% 증가`, {
             fontFamily: FONT_B, fontSize: '28px', color: '#2ecc71',
             align: 'center', lineSpacing: 10,
           }).setOrigin(0.5);
@@ -1171,8 +1171,13 @@ export default class NodeEventScene extends Phaser.Scene {
               previewCard = new Card(this, -(CARD_WIDTH * SC2) / 2, -H * 0.17, nextCardData);
             }
           } else {
-            // 일반 카드: stars만 올라간 모습으로 미리보기
-            previewCard = new Card(this, -(CARD_WIDTH * SC2) / 2, -H * 0.17, cardData, starsNext);
+            // 일반 카드: stars + bonusValue 반영된 미리보기
+            const BONUS_PER_STAR_PRV: Record<number, number> = { 25: 5, 26: 5, 27: 3, 28: 2, 29: 5 };
+            const bonusAmtPrv = BONUS_PER_STAR_PRV[cardData.id] ?? 3;
+            const nextBonus   = (entry.bonusValue || 0) + bonusAmtPrv;
+            const nextMult    = parseFloat(((entry.mult || 1.0) * 1.25).toFixed(2));
+            previewCard = new Card(this, -(CARD_WIDTH * SC2) / 2, -H * 0.17,
+              { ...cardData, bonusValue: nextBonus, mult: nextMult }, starsNext);
           }
 
           if (previewCard) {
@@ -1180,12 +1185,18 @@ export default class NodeEventScene extends Phaser.Scene {
             this.root.add(previewCard);
           }
 
-          const multLabel = !isElemental
-            ? `\n밸류 ×${(entry.mult ?? 1).toFixed(2)} → ×${((entry.mult ?? 1) * 1.25).toFixed(2)}`
+          // 일반 카드: 데미지 보너스 정보도 표시
+          const BONUS_PER_STAR: Record<number, number> = { 25: 5, 26: 5, 27: 3, 28: 2, 29: 5 };
+          const KEY_LABEL_SHORT: Record<string, string> = { attack: 'ATK', defense: 'DEF', spear: 'SPEAR', arrow: 'ARROW', hp: 'HP' };
+          const bonusAmt = !isElemental ? (BONUS_PER_STAR[cardData.id] ?? 3) : 0;
+          const curBonus = !isElemental ? (entry.bonusValue ?? 0) : 0;
+          const bonusLabel = !isElemental
+            ? `\n+${KEY_LABEL_SHORT[cardData.key] ?? 'VAL'} ${curBonus} → ${curBonus + bonusAmt}` +
+              `\n밸류 ×${(entry.mult ?? 1).toFixed(2)} → ×${((entry.mult ?? 1) * 1.25).toFixed(2)}`
             : '';
 
           const resDesc = this.add.text(0, H * 0.18,
-            `[${i18n.t(cardData.nameKey)}]\n${'★'.repeat(starsNow)}  →  ${'★'.repeat(starsNext)}${multLabel}`, {
+            `[${i18n.t(cardData.nameKey)}]\n${'★'.repeat(starsNow)}  →  ${'★'.repeat(starsNext)}${bonusLabel}`, {
               fontFamily: FONT_B, fontSize: '20px', color: '#f1c40f', align: 'center'
             }).setOrigin(0.5);
 
@@ -1277,7 +1288,11 @@ export default class NodeEventScene extends Phaser.Scene {
       const isMaxed        = effectiveStars >= 5;
       const canUpgrade     = isStar ? !isMaxed : true;
 
-      const card = new Card(this, cx - scaledW / 2, cy - scaledH / 2, cardData,
+      const totalMult = parseFloat(((entry.mult ?? 1) * (this.data_.playerCardMult ?? 1)).toFixed(4));
+      const card = new Card(this, cx - scaledW / 2, cy - scaledH / 2,
+        !isElemental
+          ? { ...cardData, bonusValue: entry.bonusValue, mult: totalMult }
+          : { ...cardData, mult: parseFloat((cardData.mult * (this.data_.playerCardMult ?? 1)).toFixed(4)) },
         !isElemental ? effectiveStars : undefined);
       card.setScale(CARD_SC);
 

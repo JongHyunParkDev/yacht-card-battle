@@ -220,11 +220,12 @@ export default class Card extends Phaser.GameObjects.Container {
 
   /** 하단 묘사 영역: 메인 스탯 + 이펙트 태그 자동 생성 */
   private drawDescription() {
-    const { key, value, mult, effects } = this.cardInfo;
-    const isGallery = this.scene.scene.key === 'CardGalleryScene';
-    const multVal   = mult ?? 1;
-    const innerX    = PAD + INNER_PAD;
-    const innerW    = CARD_WIDTH - PAD * 2 - INNER_PAD * 2;
+    const { key, value, mult, bonusValue, effects } = this.cardInfo;
+    const isGallery  = this.scene.scene.key === 'CardGalleryScene';
+    const multVal    = mult ?? 1;
+    const displayVal = value + (bonusValue || 0);
+    const innerX     = PAD + INNER_PAD;
+    const innerW     = CARD_WIDTH - PAD * 2 - INNER_PAD * 2;
 
     // ── 메인 스탯 라벨 ───────────────────────────────────────────────────────
     const KEY_COLOR: Record<string, string> = {
@@ -247,8 +248,8 @@ export default class Card extends Phaser.GameObjects.Container {
     const keyColor = KEY_COLOR[key]  ?? '#f5cc4a';
 
     const mainStatStr = isGallery
-      ? `${keyLabel}  ${value}`
-      : `${keyLabel}  ${value}  ×${multVal}`;
+      ? `${keyLabel}  ${displayVal}`
+      : `${keyLabel}  ${displayVal}  ×${multVal.toFixed(multVal === Math.floor(multVal) ? 0 : 2)}`;
 
     this.add(
       this.scene.add.text(innerX, DESC_Y + INNER_PAD, mainStatStr, {

@@ -23,7 +23,7 @@ export interface BattleSceneData {
   playerCrit:       number;
   playerCritDmg:    number;
   characterWeapon:  WeaponType;
-  deck:             { cardId: number; count: number; mult?: number }[];
+  deck:             { cardId: number; count: number; mult?: number; stars?: number; bonusValue?: number }[];
   playerCardMult:   number;
   playerShieldMult: number;
   playerEquipment?: string[];  // 장비 ID 목록 (패시브 효과 적용용)
@@ -245,7 +245,7 @@ export default class BattleScene extends Phaser.Scene {
       const cardDef = CARD_DATA_LIST.find(c => c.id === entry.cardId);
       if (cardDef) {
         for (let i = 0; i < entry.count; i++) {
-          this.drawPile.push({ ...cardDef, mult: entry.mult ?? 1 });
+          this.drawPile.push({ ...cardDef, mult: entry.mult ?? 1, bonusValue: entry.bonusValue ?? 0, stars: entry.stars ?? cardDef.stars });
         }
       }
     });
@@ -697,6 +697,9 @@ export default class BattleScene extends Phaser.Scene {
     this.selectedCards = Array(HAND_SIZE).fill(false);
     this.selectionOrder = [];
 
+    // 매 턴 시작 시 쉴드 초기화 (이전 턴 잔여 쉴드 제거)
+    this.currentTurnDefense = 0;
+
     // Guardian 패시브: 매 턴 시작 시 방어막 +5
     if (this.data_.characterWeapon === 'swordShield') {
       this.currentTurnDefense += 5;
@@ -724,8 +727,9 @@ export default class BattleScene extends Phaser.Scene {
       const isSelected = this.selectedCards[i];
       cont.y = areaY;
 
-      // Card 객체 생성
-      const cardObj = new Card(this, -cardW / 2, -cardH / 2, cardData);
+      // Card 객체 생성 (일반 카드 stars 오버라이드)
+      const overrideStars = cardData.element === 'normal' ? (cardData as any).stars : undefined;
+      const cardObj = new Card(this, -cardW / 2, -cardH / 2, cardData, overrideStars);
       cardObj.setScale(cardScale);
       cont.add(cardObj);
 
@@ -850,12 +854,13 @@ export default class BattleScene extends Phaser.Scene {
         const sameElemsCount = Math.max(...activeCards.map(c => c.element !== 'normal' ? activeCards.filter(ac => ac.element === c.element).length : 0));
         
         let comboMsg = '';
-        if (sameCardsCount >= 2) {
-          comboMsg = `동일 카드 ${sameCardsCount}장 효과 적용!`;
-          this.comboInfoText.setColor('#ffeb3b');
-        } else if (sameElemsCount >= 2) {
+        // 속성 콤보가 카드 ID 콤보보다 크거나 같으면 속성 콤보 우선 표시
+        if (sameElemsCount >= 2 && sameElemsCount >= sameCardsCount) {
           comboMsg = `동일 속성 ${sameElemsCount}장 효과 적용!`;
           this.comboInfoText.setColor('#ff9800');
+        } else if (sameCardsCount >= 2) {
+          comboMsg = `동일 카드 ${sameCardsCount}장 효과 적용!`;
+          this.comboInfoText.setColor('#ffeb3b');
         }
         this.comboInfoText.setText(comboMsg);
       }
@@ -877,8 +882,6 @@ export default class BattleScene extends Phaser.Scene {
     const activeCards = this.selectionOrder.map(i => this.hand[i]);
     const elemTypes = activeCards.map(c => c.element);
     const isFastForward = elemTypes[0] !== 'normal' && elemTypes.every(e => e === elemTypes[0]);
-
-    this.currentTurnDefense = 0;
 
     // 0~6: 계산 식을 3장 각각 반복
     for (let step = 0; step < 3; step++) {
@@ -906,7 +909,7 @@ export default class BattleScene extends Phaser.Scene {
     return new Promise(resolve => {
       const card = cards[step];
       AudioManager.play('CARD_PLAY');
-      const baseVal = card.value * (card.mult || 1.0) * (this.data_.playerCardMult || 1.0);
+      const baseVal = (card.value + (card.bonusValue || 0)) * (card.mult || 1.0) * (this.data_.playerCardMult || 1.0);
       let dmg = 0;
       let heal = 0;
       let shield = 0;
@@ -921,7 +924,7 @@ export default class BattleScene extends Phaser.Scene {
       } else if (card.key === 'arrow') {
         // Ranger 패시브: 화살 카드 = (ATK + 카드밸류) × mult × cardMult
         if (this.data_.characterWeapon === 'bow') {
-          dmg = (this.data_.playerAtk + card.value) * (card.mult || 1.0) * (this.data_.playerCardMult || 1.0);
+          dmg = (this.data_.playerAtk + card.value + (card.bonusValue || 0)) * (card.mult || 1.0) * (this.data_.playerCardMult || 1.0);
         } else {
           dmg = baseVal;
         }
