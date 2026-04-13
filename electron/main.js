@@ -51,6 +51,7 @@ function createWindow () {
   });
 
   // 영구 기록 저장
+  // runData.isDeath = true 이면 사망 런 → totalGold/allEquipment에 누적하지 않고 currentGold/currentEquipment만 초기화
   ipcMain.handle('save-legacy', async (event, runData) => {
     try {
       const legacyPath = path.join(app.getPath('userData'), 'legacy.json');
@@ -58,13 +59,17 @@ function createWindow () {
       if (fs.existsSync(legacyPath)) {
         try { legacy = JSON.parse(fs.readFileSync(legacyPath, 'utf-8')); } catch {}
       }
+      // 런 기록은 사망/클리어 모두 저장
       legacy.runs.push(runData);
-      legacy.totalGold += (runData.gold ?? 0);
-      const equips = runData.equipment ?? [];
-      equips.forEach(eq => {
-        if (!legacy.allEquipment.includes(eq)) legacy.allEquipment.push(eq);
-      });
-      // 런 종료 시 currentGold/currentEquipment 이원
+      if (!runData.isDeath) {
+        // 클리어 시에만 totalGold / allEquipment 누적
+        legacy.totalGold += (runData.gold ?? 0);
+        const equips = runData.equipment ?? [];
+        equips.forEach(eq => {
+          if (!legacy.allEquipment.includes(eq)) legacy.allEquipment.push(eq);
+        });
+      }
+      // 사망/클리어 모두 currentGold/currentEquipment 초기화
       legacy.currentGold      = 0;
       legacy.currentEquipment = [];
       fs.writeFileSync(legacyPath, JSON.stringify(legacy, null, 2), 'utf-8');

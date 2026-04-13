@@ -28,6 +28,8 @@ export interface BattleSceneData {
   playerShieldMult: number;
   playerEquipment?: string[];  // 장비 ID 목록 (패시브 효과 적용용)
   isFinalBoss?:     boolean;   // 최종 보스 여부
+  /** 클리어한 맵 수 (적 스케일링용). 0 = 첫 번째 맵 */
+  mapStage?:        number;
 }
 
 // ─── 상수 ─────────────────────────────────────────────────────────────────────
@@ -53,6 +55,17 @@ const TYPE_BEATS: Record<string, string> = {
 const HAND_SIZE   = 5;
 const MAX_TURNS   = 20;
 const CARD_SCALE  = 0.55;
+
+// BOSS_FINAL 3페이즈 데이터
+// HP는 페이즈마다 100 고정 (보스 턴 종료 후 100으로 리셋)
+const FINAL_BOSS_HP        = 100;   // 페이즈당 HP (매 보스 턴 종료 후 리셋)
+const FINAL_BOSS_SHIELD    = 50;    // 보스 턴 종료 후 부여되는 쉴드
+const FINAL_BOSS_MAX_TURNS = 5;     // 페이즈당 최대 플레이어 턴
+const FINAL_BOSS_PHASES = [
+  { atk: 22, def: 10, label: '1형태',    color: '#ffffff', desc: '일반 공격 패턴' },
+  { atk: 30, def:  5, label: '분노 형태', color: '#ff8800', desc: '3번째 턴마다 분노 일격 (2× ATK)' },
+  { atk: 38, def:  0, label: '절망 형태', color: '#ff2222', desc: '매 턴 ATK+4, 짝수 턴 이중 타격' },
+];
 const FONT_B      = 'SBAggroB';
 const FONT_M      = 'SBAggroM';
 const FONT_L      = 'SBAggroL';
@@ -76,6 +89,13 @@ export default class BattleScene extends Phaser.Scene {
   private currentTurn     = 1;
   private isAnimating     = false;
   private battleEnded     = false;
+
+  // ── BOSS_FINAL 페이즈 ─────────────────────────────────────────────────────
+  private finalBossPhase       = 0;  // 현재 페이즈 인덱스 (0/1/2)
+  private finalBossPatternTurn = 0;  // 페이즈 내 보스 턴 카운터 (최대 5)
+  private finalBossEnrageBonus = 0;  // 3페이즈 분노 ATK 누적값
+  private finalBossShield      = 0;  // 보스 쉴드 (보스 턴 종료 후 50 세팅)
+  private finalBossShieldLabel!: Phaser.GameObjects.Text;
 
   // ── 카드 상태 ─────────────────────────────────────────────────────────────
   private drawPile: CardData[] = []; // 뽑을 카드 뭉치
@@ -147,6 +167,11 @@ export default class BattleScene extends Phaser.Scene {
     this.cardContainers = [];
     this.rerollBtns = [];
     this.currentTurnDefense = 0;
+    // BOSS_FINAL 초기화
+    this.finalBossPhase       = 0;
+    this.finalBossPatternTurn = 0;
+    this.finalBossEnrageBonus = 0;
+    this.finalBossShield      = 0;
     // 상태이상 초기화
     this.enemyBurnValue = 0;
     this.enemyBurnDur = 0;
@@ -180,10 +205,25 @@ export default class BattleScene extends Phaser.Scene {
     const elem = isElemental ? this.data_.mapElement : 'normal';
     this.enemyDefData = getRandomEnemy(elem, rank);
 
-    this.enemyMaxHp      = this.enemyDefData.hp;
-    this.enemyAtk        = this.enemyDefData.atk;
-    this.enemyDef        = this.enemyDefData.def;
-    this.enemyCurrentHp  = this.enemyDefData.hp;
+    // 맵 진행에 따른 적 스케일링 (mapStage 0=첫 맵, 1=두 번째 맵, ...)
+    // 최종 보스(isFinalBoss)는 고정 수치이므로 스케일링 제외
+    const mapStage     = this.data_.mapStage ?? 0;
+    const stageHpMult  = 1 + mapStage * 0.25;   // HP:  맵당 +25%
+    const stageAtkMult = 1 + mapStage * 0.20;   // ATK: 맵당 +20%
+
+    // BOSS_FINAL은 페이즈 0 데이터로 오버라이드 (HP=100 고정, 스케일링 없음)
+    if (this.data_.isFinalBoss) {
+      this.enemyMaxHp     = FINAL_BOSS_HP;
+      this.enemyAtk       = FINAL_BOSS_PHASES[0].atk;
+      this.enemyDef       = FINAL_BOSS_PHASES[0].def;
+    } else {
+      this.enemyMaxHp     = Math.round(this.enemyDefData.hp  * stageHpMult);
+      this.enemyAtk       = Math.round(this.enemyDefData.atk * stageAtkMult);
+      this.enemyDef       = this.enemyDefData.def;
+    }
+    this.enemyCurrentHp = this.enemyMaxHp;
+
+    console.log(`[스테이지 스케일링] mapStage=${mapStage} hpMult=×${stageHpMult.toFixed(2)} atkMult=×${stageAtkMult.toFixed(2)} → 적HP=${this.enemyMaxHp} 적ATK=${this.enemyAtk}`);
     
     // UI에 보여질 이름: 보스는 전달받은 mobName 사용, 일반은 enemyData에서
     if (!this.data_.isBoss) {
@@ -204,6 +244,14 @@ export default class BattleScene extends Phaser.Scene {
 
     // 적 의도 및 상태이상 UI
     this.createEnemyIntentUI();
+
+    // BOSS_FINAL 쉴드 라벨
+    if (this.data_.isFinalBoss) {
+      const barY = this.H * 0.59;
+      this.finalBossShieldLabel = this.add.text(this.W * 0.82, barY - 20,
+        '', { fontFamily: FONT_B, fontSize: '14px', color: '#88ccff', stroke: '#000', strokeThickness: 3 }
+      ).setOrigin(0.5, 1).setVisible(false);
+    }
 
     // 장비 패시브 계산
     this.applyEquipmentPassives();
@@ -297,6 +345,20 @@ export default class BattleScene extends Phaser.Scene {
         case 'card_mult_on_crit':  this.equipCardMultOnCrit += eq.special.value; break;
       }
     }
+
+    // ── 전투 시작 장비 패시브 요약 로그 ──────────────────────────────────────
+    console.log(`====== [전투 시작 - 장비 패시브 현황] ======`);
+    console.log(`> 장착 장비: [${equips.join(', ') || '없음'}]`);
+    console.log(`> 플레이어 스탯: ATK=${this.data_.playerAtk} DEF=${this.data_.playerDef} CRIT=${this.data_.playerCrit}% critDmg=${this.data_.playerCritDmg} cardMult=${this.data_.playerCardMult} shieldMult=${this.data_.playerShieldMult}`);
+    console.log(`> 장비 누적 패시브:`);
+    console.log(`  - 속성 공격 보너스(elemAtkBonus): ${JSON.stringify(this.equipElemAtkBonus) || '{}'}`);
+    console.log(`  - 속성 피해 감소(elemDmgReduce):  ${JSON.stringify(this.equipElemDmgReduce) || '{}'}`);
+    console.log(`  - 턴 종료 방어막(shieldPerTurn):  ${this.equipShieldPerTurn}`);
+    console.log(`  - 승리 시 회복(healOnWin):         ${this.equipHealOnWin} + ${this.equipHealOnWinPct}%`);
+    console.log(`  - 속성 배율 증폭(elemAmplify):     ${this.equipElemAmplify}`);
+    console.log(`  - 흡혈(lifestealPct):              ${(this.equipLifestealPct * 100).toFixed(1)}%`);
+    console.log(`  - 크리 시 추가 카드배율(cardMultOnCrit): ${this.equipCardMultOnCrit}`);
+    console.log(`==========================================`);
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -428,13 +490,13 @@ export default class BattleScene extends Phaser.Scene {
     bgBar.setStrokeStyle(1, 0x666666);
     void bgBar;
 
-    // fill — 초기 HP 비율 반영
+    // fill — 초기 HP 비율 반영 (origin 왼쪽 고정 → 오른쪽으로만 줄어듦)
     const initRatio = isPlayer
       ? Math.max(0, this.playerCurrentHp / this.data_.playerMaxHp)
       : 1;
-    const fill = this.add.rectangle(x + barW * initRatio / 2, cy, barW * initRatio, barH,
+    const fill = this.add.rectangle(x, cy, barW * initRatio, barH,
       isPlayer ? (initRatio > 0.3 ? 0x2ecc71 : 0xe74c3c) : 0xe74c3c);
-    fill.setOrigin(0.5, 0.5);
+    fill.setOrigin(0, 0.5);
 
     // HP 텍스트
     const hpTxt = this.add.text(cx, cy + barH + 2,
@@ -897,7 +959,7 @@ export default class BattleScene extends Phaser.Scene {
     }
 
     if (this.enemyCurrentHp <= 0) {
-      this.time.delayedCall(800, () => this.endBattle(true));
+      this.time.delayedCall(800, () => this.checkEnemyDeath());
       return;
     }
 
@@ -919,12 +981,23 @@ export default class BattleScene extends Phaser.Scene {
         shield = baseVal * (this.data_.playerShieldMult || 1.0);
         // Guardian 패시브: 방어 카드 2배
         if (this.data_.characterWeapon === 'swordShield') shield *= 2;
+        console.log(`--- [카드 사용: ${card.nameKey} (방어)] ---`);
+        console.log(`> baseVal=${baseVal.toFixed(2)} shieldMult=${this.data_.playerShieldMult}${this.data_.characterWeapon === 'swordShield' ? ' Guardian×2' : ''}`);
+        console.log(`> 방어막 생성량: ${Math.floor(shield)} (현재 누적 쉴드: ${this.currentTurnDefense} → ${this.currentTurnDefense + shield})`);
+        console.log(`------------------------------------------------------`);
       } else if (card.key === 'hp') {
         heal = baseVal;
+        console.log(`--- [카드 사용: ${card.nameKey} (HP 회복)] ---`);
+        console.log(`> baseVal=${baseVal.toFixed(2)} → 회복량: ${Math.floor(heal)}`);
+        console.log(`> 플레이어 HP: ${this.playerCurrentHp} → ${Math.min(this.data_.playerMaxHp, this.playerCurrentHp + Math.floor(heal))} / ${this.data_.playerMaxHp}`);
+        console.log(`------------------------------------------------------`);
       } else if (card.key === 'arrow') {
         // Ranger 패시브: 화살 카드 = (ATK + 카드밸류) × mult × cardMult
         if (this.data_.characterWeapon === 'bow') {
           dmg = (this.data_.playerAtk + card.value + (card.bonusValue || 0)) * (card.mult || 1.0) * (this.data_.playerCardMult || 1.0);
+          console.log(`--- [카드 사용: ${card.nameKey} (화살 — Ranger 패시브)] ---`);
+          console.log(`> (ATK ${this.data_.playerAtk} + value ${card.value} + bonus ${card.bonusValue ?? 0}) × mult ${card.mult ?? 1} × cardMult ${this.data_.playerCardMult} = ${dmg.toFixed(2)}`);
+          console.log(`------------------------------------------------------`);
         } else {
           dmg = baseVal;
         }
@@ -939,12 +1012,14 @@ export default class BattleScene extends Phaser.Scene {
       if (shieldEff) {
         let shieldVal = shieldEff.value * (card.mult || 1) * (this.data_.playerShieldMult || 1);
         if (this.data_.characterWeapon === 'swordShield') shieldVal *= 2; // Guardian
+        console.log(`  [effect: shield_add] value=${shieldEff.value} mult=${card.mult ?? 1} shieldMult=${this.data_.playerShieldMult}${this.data_.characterWeapon === 'swordShield' ? ' Guardian×2' : ''} → 방어막 +${Math.floor(shieldVal)}`);
         this.currentTurnDefense += shieldVal;
         this.updateShieldBadge();
         AudioManager.play('SHIELD');
       }
       if (healEff) {
         const healAmt = Math.floor(healEff.value * (card.mult || 1));
+        console.log(`  [effect: heal] value=${healEff.value} mult=${card.mult ?? 1} → HP +${healAmt}`);
         this.playerCurrentHp = Math.min(this.data_.playerMaxHp, this.playerCurrentHp + healAmt);
         this.updatePlayerHpBar();
         this.showFloatingHeal(this.playerSprite.x, this.playerSprite.y - 50, healAmt);
@@ -1041,12 +1116,38 @@ export default class BattleScene extends Phaser.Scene {
           }
 
           // 7. 연출 → 데미지 적용
-          console.log(`[카드 공격] ${card.nameKey} | baseVal=${card.value} dmg(패시브후)=${dmg} hitDmg(상성후)=${hitDmg.toFixed(1)} crit=${isCrit}(×${critDmgMult}) cardDmg=${cardDmg.toFixed(1)} bonus=${bonusDmg.toFixed(1)} pierce=${isPierce} finalDmg=${finalDmg}${isInstakill ? ' 즉사!' : ''}`);
+          const effectiveDef2 = Math.max(0, this.enemyDef - this.enemyArmorBreak);
+          const elemAtkBonus  = this.equipElemAtkBonus[card.element] ?? 0;
+          const elemStr = (() => {
+            if (card.element === 'normal') return '속성없음';
+            const parts: string[] = [];
+            if (TYPE_BEATS[card.element] === this.data_.mapElement) parts.push(`유리×1.5`);
+            else if (TYPE_BEATS[this.data_.mapElement] === card.element) parts.push(`불리×0.5`);
+            else parts.push(`중립`);
+            if (this.equipElemAmplify > 0) parts.push(`elemAmplify+${this.equipElemAmplify}(유리 시)`);
+            if (elemAtkBonus > 0) parts.push(`elemAtkBonus×${(1 + elemAtkBonus).toFixed(2)}`);
+            return parts.join(' ');
+          })();
+          const critLine = isCrit
+            ? `치명타! critChance=${critChance}%(기본${this.data_.playerCrit}%) ×${critDmgMult}(기본${this.data_.playerCritDmg}${this.equipCardMultOnCrit > 0 ? `+equip크리배율${this.equipCardMultOnCrit}` : ''})`
+            : `일반 (critChance=${critChance}%)`;
+          console.log(`--- [카드 공격: ${card.nameKey} (${card.element} ★${card.stars})] ${hitsDone + 1}/${hitCount}타 ---`);
+          console.log(`> 기초값: card.value=${card.value} bonusValue=${card.bonusValue ?? 0} mult=${card.mult ?? 1} cardMult=${this.data_.playerCardMult} → baseVal=${dmg.toFixed(2)}`);
+          console.log(`> 속성 상성: ${elemStr} → hitDmg=${hitDmg.toFixed(2)}`);
+          if (this.enemyVulnerableDur > 0) console.log(`> 취약(×1.5) 적용 → hitDmg=${hitDmg.toFixed(2)} (${this.enemyVulnerableDur}턴 남음)`);
+          console.log(`> 크리티컬: ${critLine} → cardDmg=${cardDmg.toFixed(2)}`);
+          if (bonusDmg > 0) console.log(`> 콤보 추뎀: +${bonusDmg.toFixed(2)} (같은카드${sameCards.length}장 / 같은속성${sameElems.length}장)`);
+          if (chainBonus > 0) console.log(`> 연쇄(chain) 추뎀: +${chainBonus.toFixed(2)}${this.data_.characterWeapon === 'bow' ? ' (Ranger×1.5)' : ''}`);
+          console.log(`> 방어력 적용: ${isPierce ? `관통(방어 무시)${this.data_.characterWeapon === 'hammer' ? ' — Titan패시브' : ''}` : `적DEF=${this.enemyDef} 방깎=${this.enemyArmorBreak} 유효DEF=${effectiveDef2} → ×${(50 / (50 + effectiveDef2)).toFixed(3)}`}`);
+          if (this.equipLifestealPct > 0) console.log(`> 흡혈 예정: finalDmg × ${(this.equipLifestealPct * 100).toFixed(1)}% = ${Math.floor(finalDmg * this.equipLifestealPct)} HP`);
+          if (isInstakill) console.log(`> Lancer 즉사 조건 충족! (rawCritDmg=${hitDmg * critDmgMult} >= 적HP ${this.enemyCurrentHp})`);
+          console.log(`> 최종 피해량: ${finalDmg} (적 현재HP: ${this.enemyCurrentHp})`);
+          console.log(`------------------------------------------------------`);
           this.playPlayerAttack(card.element, () => {
-            this.enemyCurrentHp = Math.max(0, this.enemyCurrentHp - finalDmg);
+            const actualDmg = this.damageEnemy(finalDmg);
             this.updateEnemyHpBar();
-            this.playEnemyHit(card.element, isCrit);
-            this.showFloatingDamage(this.enemyContainer.x, this.enemyContainer.y - 40, finalDmg, isCrit, '#2ecc71');
+            if (actualDmg > 0) this.playEnemyHit(card.element, isCrit);
+            this.showFloatingDamage(this.enemyContainer.x, this.enemyContainer.y - 40, actualDmg || finalDmg, isCrit, '#2ecc71');
             
             // 피격 사운드 (크리티컬은 별도 사운드)
         AudioManager.play(isCrit ? 'CRIT' : 'HIT');
@@ -1136,11 +1237,11 @@ export default class BattleScene extends Phaser.Scene {
       console.log(`----------------------------------`);
 
       this.playPlayerAttack('normal', () => {
-        this.enemyCurrentHp = Math.max(0, this.enemyCurrentHp - finalDmg);
+        const actualDmg = this.damageEnemy(finalDmg);
         this.updateEnemyHpBar();
-        this.playEnemyHit('normal', isCrit);
+        if (actualDmg > 0) this.playEnemyHit('normal', isCrit);
 
-        this.showFloatingDamage(this.enemyContainer.x, this.enemyContainer.y - 40, finalDmg, isCrit, '#2ecc71');
+        this.showFloatingDamage(this.enemyContainer.x, this.enemyContainer.y - 40, actualDmg || finalDmg, isCrit, '#2ecc71');
         
         const critTxt = isCrit ? ' ★CRIT!' : '';
         this.statusText.setText(`마무리 타격! ${this.data_.mobName}에게 ${Math.floor(finalDmg)}${critTxt}`).setColor('#2ecc71');
@@ -1255,8 +1356,8 @@ export default class BattleScene extends Phaser.Scene {
   // 적 턴
   // ───────────────────────────────────────────────────────────────────────────
   private doEnemyTurn() {
-    // ── 화상(Burn) 처리 ─────────────────────────────────────────────────────
-    if (this.enemyBurnDur > 0) {
+    // ── 화상(Burn) 처리 — BOSS_FINAL은 보스 턴 후 HP 리셋되므로 스킵 ─────────
+    if (this.enemyBurnDur > 0 && !this.data_.isFinalBoss) {
       const burnDmg = this.enemyBurnValue;
       this.enemyCurrentHp = Math.max(0, this.enemyCurrentHp - burnDmg);
       this.updateEnemyHpBar();
@@ -1266,7 +1367,7 @@ export default class BattleScene extends Phaser.Scene {
       this.enemyBurnDur--;
       this.updateEnemyStatusDisplay();
       if (this.enemyCurrentHp <= 0) {
-        this.time.delayedCall(600, () => this.endBattle(true));
+        this.time.delayedCall(600, () => this.checkEnemyDeath());
         return;
       }
     }
@@ -1285,6 +1386,25 @@ export default class BattleScene extends Phaser.Scene {
       this.updateEnemyStatusDisplay();
       this.time.delayedCall(900, () => this.advanceToNextTurn());
       return;
+    }
+
+    // ── BOSS_FINAL 페이즈 패턴 ───────────────────────────────────────────────
+    if (this.data_.isFinalBoss) {
+      this.finalBossPatternTurn++;
+
+      // 페이즈 2: 매 3번째 턴 분노 일격 (2× ATK)
+      if (this.finalBossPhase === 1 && this.finalBossPatternTurn % 3 === 0) {
+        return this.doFinalBossRageStrike();
+      }
+
+      // 페이즈 3: 매 턴 ATK 증가 + 매 2번째 턴 이중 타격
+      if (this.finalBossPhase === 2) {
+        this.finalBossEnrageBonus += 4;
+        this.enemyAtk = FINAL_BOSS_PHASES[2].atk + this.finalBossEnrageBonus;
+        if (this.finalBossPatternTurn % 2 === 0) {
+          return this.doFinalBossDoubleStrike();
+        }
+      }
     }
 
     // ── 적 공격력 계산 ───────────────────────────────────────────────────────
@@ -1306,10 +1426,11 @@ export default class BattleScene extends Phaser.Scene {
     this.shieldBadge?.setVisible(false);
 
     console.log(`--- [적 타격 이벤트] ---`);
-    console.log(`> 적군 기초 공격력: ${enemyAtkOriginal}`);
-    console.log(`> 내 방어력(${this.data_.playerDef}) 감쇄 적용 후: ${dmgAfterDef}`);
+    console.log(`> 적 기초 공격력: ${enemyAtkOriginal}`);
+    if (elemReduce > 0) console.log(`> 장비 속성 피해 감소(elemDmgReduce[${this.data_.mapElement}]=${elemReduce}): ×${(1 - elemReduce).toFixed(2)} 적용`);
+    console.log(`> 내 방어력(DEF=${this.data_.playerDef}) 감쇄 ×${(50 / (50 + this.data_.playerDef)).toFixed(3)} → ${dmgAfterDef}`);
     if (this.currentTurnDefense > 0) {
-      console.log(`> 쉴드 직접 삭감값: -${this.currentTurnDefense}`);
+      console.log(`> 쉴드 차감: -${this.currentTurnDefense} → 남은 피해: ${enemyDmg}`);
     }
     console.log(`> 최종으로 받는 HP 피해: ${enemyDmg}`);
     console.log(`------------------------`);
@@ -1342,7 +1463,11 @@ export default class BattleScene extends Phaser.Scene {
               return;
             }
 
-            this.advanceToNextTurn();
+            if (this.data_.isFinalBoss) {
+              this.afterFinalBossTurn();
+            } else {
+              this.advanceToNextTurn();
+            }
           },
         });
       },
@@ -1452,6 +1577,232 @@ export default class BattleScene extends Phaser.Scene {
     const txt = this.shieldBadge.getByName('badgeTxt') as Phaser.GameObjects.Text;
     if (txt) txt.setText(`쉴드 ${Math.floor(this.currentTurnDefense)}`);
     this.shieldBadge.setVisible(this.currentTurnDefense > 0);
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // BOSS_FINAL 전용 메서드
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /** BOSS_FINAL: 보스 쉴드 흡수 후 HP 감소. 실제 피해량 반환 */
+  private damageEnemy(rawDmg: number): number {
+    if (this.data_.isFinalBoss && this.finalBossShield > 0) {
+      const absorbed = Math.min(this.finalBossShield, rawDmg);
+      this.finalBossShield -= absorbed;
+      rawDmg -= absorbed;
+      this.updateFinalBossShieldDisplay();
+      if (absorbed > 0 && rawDmg === 0) {
+        // 쉴드가 전부 막았을 때 BLOCK 표시
+        const bx = this.enemyContainer.x;
+        const by = this.enemyContainer.y - 40;
+        const t = this.add.text(bx, by, `🛡 BLOCK`, {
+          fontFamily: FONT_B, fontSize: '20px', color: '#88ccff', stroke: '#000', strokeThickness: 3
+        }).setOrigin(0.5);
+        this.tweens.add({ targets: t, y: by - 40, alpha: 0, duration: 800, onComplete: () => t.destroy() });
+      }
+    }
+    if (rawDmg > 0) {
+      this.enemyCurrentHp = Math.max(0, this.enemyCurrentHp - rawDmg);
+    }
+    return rawDmg;
+  }
+
+  /** BOSS_FINAL: 쉴드 라벨 갱신 */
+  private updateFinalBossShieldDisplay() {
+    if (!this.finalBossShieldLabel) return;
+    if (this.finalBossShield > 0) {
+      this.finalBossShieldLabel.setText(`🛡 ${this.finalBossShield}`).setVisible(true);
+    } else {
+      this.finalBossShieldLabel.setVisible(false);
+    }
+  }
+
+  /** BOSS_FINAL: 보스 턴 종료 후 — HP 리셋, 쉴드 50 부여, 5턴 제한 체크 */
+  private afterFinalBossTurn() {
+    if (this.playerCurrentHp <= 0) {
+      this.time.delayedCall(600, () => this.endBattle(false));
+      return;
+    }
+
+    // HP 100 리셋 + 쉴드 50 (상태이상 적용 X)
+    this.enemyCurrentHp   = FINAL_BOSS_HP;
+    this.finalBossShield  = FINAL_BOSS_SHIELD;
+    this.enemyBurnValue   = 0;
+    this.enemyBurnDur     = 0;
+    this.enemyVulnerableDur = 0;
+    this.enemyArmorBreak  = 0;
+    this.updateEnemyHpBar();
+    this.updateEnemyStatusDisplay();
+    this.updateFinalBossShieldDisplay();
+
+    // 5턴 제한 초과 → 플레이어 패배
+    if (this.finalBossPatternTurn >= FINAL_BOSS_MAX_TURNS) {
+      this.cameras.main.flash(400, 255, 0, 0);
+      this.statusText.setText(`⏰ ${FINAL_BOSS_MAX_TURNS}턴 초과! 고대 신의 분노에 쓰러지다...`).setColor('#ff4444');
+      this.time.delayedCall(2000, () => this.endBattle(false));
+      return;
+    }
+
+    this.advanceToNextTurn();
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // BOSS_FINAL 페이즈 전환 / 적 사망 체크
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /** 적 HP 0 처리 — 최종 보스 페이즈 남으면 전환, 아니면 종료 */
+  private checkEnemyDeath() {
+    if (this.data_.isFinalBoss && this.finalBossPhase < FINAL_BOSS_PHASES.length - 1) {
+      this.nextFinalBossPhase();
+    } else {
+      this.endBattle(true);
+    }
+  }
+
+  /** BOSS_FINAL 다음 페이즈로 전환 */
+  private nextFinalBossPhase() {
+    this.finalBossPhase++;
+    this.finalBossPatternTurn = 0;
+    this.finalBossEnrageBonus = 0;
+
+    const phase = FINAL_BOSS_PHASES[this.finalBossPhase];
+
+    // 상태이상 초기화
+    this.enemyBurnDur      = 0;
+    this.enemyBurnValue    = 0;
+    this.enemyVulnerableDur = 0;
+    this.enemyStunned      = false;
+    this.enemyArmorBreak   = 0;
+    this.updateEnemyStatusDisplay();
+
+    // 새 페이즈 스탯 적용 (HP=100 고정, 쉴드 리셋)
+    this.enemyMaxHp       = FINAL_BOSS_HP;
+    this.enemyCurrentHp   = FINAL_BOSS_HP;
+    this.enemyAtk         = phase.atk;
+    this.enemyDef         = phase.def;
+    this.finalBossShield  = 0;
+    this.updateEnemyHpBar();
+    this.updateFinalBossShieldDisplay();
+
+    // 화면 연출
+    this.sound.stopAll();
+    this.cameras.main.flash(600, 255, 50, 0);
+    this.cameras.main.shake(500, 0.025);
+
+    const cx = this.W / 2;
+    const cy = this.H / 2;
+
+    const overlay = this.add.graphics().setDepth(200);
+    overlay.fillStyle(0x000000, 0.6);
+    overlay.fillRect(0, 0, this.W, this.H);
+
+    const phaseTxt = this.add.text(cx, cy - 30,
+      `☠ ${this.data_.mobName}\n${phase.label}`, {
+        fontFamily: FONT_B, fontSize: '34px', color: phase.color,
+        align: 'center', stroke: '#000000', strokeThickness: 4,
+      }).setOrigin(0.5).setDepth(201).setAlpha(0);
+
+    const descTxt = this.add.text(cx, cy + 40, phase.desc, {
+      fontFamily: FONT_M, fontSize: '17px', color: '#dddddd',
+      align: 'center',
+    }).setOrigin(0.5).setDepth(201).setAlpha(0);
+
+    this.tweens.add({
+      targets: [phaseTxt, descTxt], alpha: 1, y: { from: cy - 10, to: cy - 30 },
+      duration: 350,
+      onComplete: () => {
+        this.time.delayedCall(1400, () => {
+          this.tweens.add({
+            targets: [overlay, phaseTxt, descTxt], alpha: 0, duration: 350,
+            onComplete: () => {
+              overlay.destroy(); phaseTxt.destroy(); descTxt.destroy();
+              this.statusText.setText('');
+              this.advanceToNextTurn();
+            },
+          });
+        });
+      },
+    });
+  }
+
+  /** BOSS_FINAL 페이즈 2 — 분노 일격 (2× ATK) */
+  private doFinalBossRageStrike() {
+    const elemReduce = this.equipElemDmgReduce[this.data_.mapElement ?? ''] ?? 0;
+    let rawDmg = this.enemyAtk * 2;
+    if (elemReduce > 0) rawDmg *= Math.max(0, 1 - elemReduce);
+    rawDmg = Math.max(1, Math.floor(rawDmg * (50 / (50 + this.data_.playerDef))));
+
+    const shieldAbs = Math.min(this.currentTurnDefense, rawDmg);
+    const finalDmg  = Math.max(0, rawDmg - shieldAbs);
+    this.currentTurnDefense = 0;
+    this.shieldBadge?.setVisible(false);
+
+    this.statusText.setText(`💢 분노 일격!`).setColor('#ff6600');
+    this.cameras.main.flash(200, 255, 100, 0);
+
+    this.tweens.add({
+      targets: this.enemyContainer, x: this.enemyContainer.x - this.W * 0.28,
+      duration: 180, ease: 'Expo.easeOut',
+      onComplete: () => {
+        this.playerCurrentHp = Math.max(0, this.playerCurrentHp - finalDmg);
+        this.updatePlayerHpBar();
+        this.playPlayerHit();
+        this.showFloatingDamage(this.playerSprite.x, this.playerSprite.y - 40, finalDmg, false, '#ff6600');
+
+        this.tweens.add({
+          targets: this.enemyContainer, x: this.W * 0.82, duration: 250, ease: 'Power2.easeOut',
+          onComplete: () => {
+            if (this.playerCurrentHp <= 0) { this.time.delayedCall(600, () => this.endBattle(false)); return; }
+            this.afterFinalBossTurn();
+          },
+        });
+      },
+    });
+  }
+
+  /** BOSS_FINAL 페이즈 3 — 이중 타격 (0.8× ATK × 2회) */
+  private doFinalBossDoubleStrike() {
+    const elemReduce = this.equipElemDmgReduce[this.data_.mapElement ?? ''] ?? 0;
+    const calcHit = (mult: number) => {
+      let d = this.enemyAtk * mult;
+      if (elemReduce > 0) d *= Math.max(0, 1 - elemReduce);
+      return Math.max(1, Math.floor(d * (50 / (50 + this.data_.playerDef))));
+    };
+
+    const hit1Raw = calcHit(0.8);
+    const shieldAbs = Math.min(this.currentTurnDefense, hit1Raw);
+    const hit1 = Math.max(0, hit1Raw - shieldAbs);
+    const hit2 = calcHit(0.8); // 2nd hit ignores shield (already consumed)
+    this.currentTurnDefense = 0;
+    this.shieldBadge?.setVisible(false);
+
+    this.statusText.setText(`⚡⚡ 이중 타격!`).setColor('#ff2222');
+
+    const doHit = (dmg: number, onDone: () => void) => {
+      this.tweens.add({
+        targets: this.enemyContainer, x: this.enemyContainer.x - this.W * 0.22,
+        duration: 160, ease: 'Expo.easeOut',
+        onComplete: () => {
+          this.playerCurrentHp = Math.max(0, this.playerCurrentHp - dmg);
+          this.updatePlayerHpBar();
+          this.playPlayerHit();
+          this.showFloatingDamage(this.playerSprite.x, this.playerSprite.y - 40, dmg, false, '#ff4444');
+          this.tweens.add({
+            targets: this.enemyContainer, x: this.W * 0.82, duration: 200, ease: 'Power2.easeOut',
+            onComplete: onDone,
+          });
+        },
+      });
+    };
+
+    doHit(hit1, () => {
+      if (this.playerCurrentHp <= 0) { this.time.delayedCall(600, () => this.endBattle(false)); return; }
+      this.time.delayedCall(250, () => {
+        doHit(hit2, () => {
+          if (this.playerCurrentHp <= 0) { this.time.delayedCall(600, () => this.endBattle(false)); return; }
+          this.afterFinalBossTurn();
+        });
+      });
+    });
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -1566,11 +1917,18 @@ export default class BattleScene extends Phaser.Scene {
       return;
     }
     this.currentTurn++;
-    if (this.currentTurn > MAX_TURNS) {
-      this.endBattle(this.playerCurrentHp >= this.enemyCurrentHp);
-      return;
+    if (this.data_.isFinalBoss) {
+      // FINAL BOSS: MAX_TURNS 체크 없이 페이즈 턴 표시
+      const remainingTurns = FINAL_BOSS_MAX_TURNS - this.finalBossPatternTurn;
+      const color = remainingTurns <= 2 ? '#ff4444' : '#d4af37';
+      this.turnLabel.setText(`PHASE ${this.finalBossPhase + 1}  ⏳${remainingTurns}턴 남음`).setColor(color);
+    } else {
+      if (this.currentTurn > MAX_TURNS) {
+        this.endBattle(this.playerCurrentHp >= this.enemyCurrentHp);
+        return;
+      }
+      this.turnLabel.setText(`TURN ${this.currentTurn} / ${MAX_TURNS}`).setColor('#d4af37');
     }
-    this.turnLabel.setText(`TURN ${this.currentTurn} / ${MAX_TURNS}`);
     // 장비 턴마다 쉴드 부여
     if (this.equipShieldPerTurn > 0) {
       this.currentTurnDefense += this.equipShieldPerTurn;
@@ -1669,6 +2027,20 @@ export default class BattleScene extends Phaser.Scene {
 
     if (this.enemyStunned) {
       txt.setText('💫 기절 중').setColor('#aaaaff');
+    } else if (this.data_.isFinalBoss) {
+      // BOSS_FINAL 페이즈별 예고
+      const nextPatternTurn = this.finalBossPatternTurn + 1;
+      if (this.finalBossPhase === 1 && nextPatternTurn % 3 === 0) {
+        const rageDmg = Math.max(1, Math.floor(this.enemyAtk * 2 * (50 / (50 + this.data_.playerDef))));
+        txt.setText(`💢 분노 일격 예고: -${rageDmg}`).setColor('#ff6600');
+      } else if (this.finalBossPhase === 2 && nextPatternTurn % 2 === 0) {
+        const singleDmg = Math.max(1, Math.floor(this.enemyAtk * 0.8 * (50 / (50 + this.data_.playerDef))));
+        txt.setText(`⚡⚡ 이중 타격 예고: -${singleDmg}×2`).setColor('#ff2222');
+      } else {
+        const rawDmg = Math.max(1, Math.floor(this.enemyAtk * (50 / (50 + this.data_.playerDef))));
+        const suffix = this.finalBossPhase === 2 ? ' (↑분노)' : '';
+        txt.setText(`⚔ 예고 공격: -${rawDmg}${suffix}`).setColor('#ff7777');
+      }
     } else {
       const rawDmg = Math.max(1, Math.floor(this.enemyAtk * (50 / (50 + this.data_.playerDef))));
       const shieldMitigated = Math.max(0, rawDmg - this.currentTurnDefense);

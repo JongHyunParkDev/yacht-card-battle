@@ -31,6 +31,8 @@ export interface NodeEventData {
   deck:            { cardId: number; count: number; mult?: number; stars?: number; bonusValue?: number }[];
   playerCardMult:  number;
   playerShieldMult: number;
+  /** 클리어한 맵 수 (적 스케일링용). 0 = 첫 번째 맵 */
+  mapStage:        number;
 }
 
 // ─── 공통 상수 ─────────────────────────────────────────────────────────────────
@@ -277,10 +279,11 @@ export default class NodeEventScene extends Phaser.Scene {
       playerCritDmg,
       characterWeapon,
       deck,
-      playerCardMult: this.data_.playerCardMult,
+      playerCardMult:   this.data_.playerCardMult,
       playerShieldMult: this.data_.playerShieldMult,
-      playerEquipment: this.data_.playerEquipment ?? [],
-      isFinalBoss: false, // 일반 전투는 최종 보스 아님
+      playerEquipment:  this.data_.playerEquipment ?? [],
+      isFinalBoss:      false,
+      mapStage:         this.data_.mapStage ?? 0,
     });
 
     // NodeEventScene 자신은 종료 (BattleScene이 nodeEventComplete 직접 발행)
@@ -1000,7 +1003,7 @@ export default class NodeEventScene extends Phaser.Scene {
 
     // ── 선택지 B: 방어 카드 강화 ──────────────────────────────────────────────
     const shieldBtnLabel = hasShieldCards
-      ? '방어 카드 강화  (×1.5)'
+      ? '방어 카드 강화  (×1.2)'
       : '방어 카드 강화  (덱에 방어 카드 없음)';
 
     const shieldBtn = this.makeButton(W * 0.18, -H * 0.06, shieldBtnLabel, 0x1a3a6c, () => {
@@ -1011,12 +1014,12 @@ export default class NodeEventScene extends Phaser.Scene {
         this.root.add([
           this.makeHeader('row1_2', '방어막 강화', -H * 0.38),
           this.makeDivider(-H * 0.30, W * 0.7),
-          this.add.text(0, -H * 0.23, '강화할 방어 카드를 선택하세요.\n효과가 ×1.5 증가합니다.', {
+          this.add.text(0, -H * 0.23, '강화할 방어 카드를 선택하세요.\n효과가 ×1.2 증가합니다.', {
             fontFamily: FONT_M, fontSize: '17px', color: '#dddddd', align: 'center',
           }).setOrigin(0.5),
         ]);
 
-        this.createScrollableCardGrid(shieldCards, 1.5, (entry, cardData, curM, nextM) => {
+        this.createScrollableCardGrid(shieldCards, 1.2, (entry, cardData, curM, nextM) => {
           this.tweens.add({ targets: this.root, alpha: 0, duration: 200, onComplete: () => {
             this.root.removeAll(true);
             this.root.setAlpha(1);
@@ -1031,7 +1034,7 @@ export default class NodeEventScene extends Phaser.Scene {
                 fontFamily: FONT_B, fontSize: '24px', color: '#56b4f7', align: 'center',
               }).setOrigin(0.5),
               this.makeButton(0, H * 0.32, '확인', 0x1a3a6c, () => {
-                this.closeEvent({ upgradeCardId: entry.cardId, upgradeCardMult: 1.5 });
+                this.closeEvent({ upgradeCardId: entry.cardId, upgradeCardMult: 1.2 });
               }, Math.round(W * 0.28), 56),
             ]);
           }});
@@ -1077,14 +1080,22 @@ export default class NodeEventScene extends Phaser.Scene {
       const cx  = startX + col * (scaledW + gapX);
       const cy  = startY + row * (scaledH + gapY);
 
-      const currentMult = entry.mult ?? 1.0;
-      const nextMult    = parseFloat((currentMult * multGain).toFixed(2));
+      const currentMult  = entry.mult ?? 1.0;
+      const nextMult     = parseFloat((currentMult + (multGain - 1)).toFixed(2));
+      const globalMult   = this.data_.playerCardMult ?? 1.0;
+      const effCurrent   = parseFloat((currentMult * globalMult).toFixed(2));
+      const effNext      = parseFloat((nextMult     * globalMult).toFixed(2));
 
-      const card = new Card(this, cx - scaledW / 2, cy - scaledH / 2, cardData);
+      const isElem = cardData.element !== 'normal';
+      const card = new Card(this, cx - scaledW / 2, cy - scaledH / 2,
+        isElem
+          ? { ...cardData, mult: effCurrent }
+          : { ...cardData, bonusValue: (entry as any).bonusValue, mult: effCurrent },
+        isElem ? undefined : ((entry as any).stars ?? 0));
       card.setScale(CARD_SC).setInteractive(new Phaser.Geom.Rectangle(0, 0, CARD_WIDTH, CARD_HEIGHT), Phaser.Geom.Rectangle.Contains);
 
       const multTxt = this.add.text(cx, cy - scaledH / 2 - 8,
-        `×${currentMult.toFixed(1)} → ×${nextMult.toFixed(1)}`, {
+        `×${effCurrent.toFixed(1)} → ×${effNext.toFixed(1)}`, {
           fontFamily: FONT_B, fontSize: '11px', color: '#ffb347', stroke: '#000', strokeThickness: 2
         }).setOrigin(0.5, 1);
 
@@ -1098,14 +1109,18 @@ export default class NodeEventScene extends Phaser.Scene {
             this.root.removeAll(true);
             this.root.setAlpha(1);
             const resTitle = this.makeHeader('row1_2', '카드 강화 완료!', -H * 0.35);
-            
+
             const SC2 = Math.min(1.15, H * 0.46 / CARD_HEIGHT);
-            const previewCard = new Card(this, -(CARD_WIDTH * SC2) / 2, -H * 0.17, cardData);
+            const previewCard = new Card(this, -(CARD_WIDTH * SC2) / 2, -H * 0.17,
+              isElem
+                ? { ...cardData, mult: effNext }
+                : { ...cardData, bonusValue: (entry as any).bonusValue, mult: effNext },
+              isElem ? undefined : ((entry as any).stars ?? 0));
             previewCard.setScale(SC2);
             this.root.add(previewCard);
 
             const resDesc = this.add.text(0, H * 0.18,
-              `[${i18n.t(cardData.nameKey)}]\n×${currentMult.toFixed(1)}  →  ×${nextMult.toFixed(1)}`, {
+              `[${i18n.t(cardData.nameKey)}]\n×${effCurrent.toFixed(1)}  →  ×${effNext.toFixed(1)}`, {
                 fontFamily: FONT_B, fontSize: '24px', color: '#56b4f7', align: 'center'
               }).setOrigin(0.5);
 
@@ -1168,7 +1183,7 @@ export default class NodeEventScene extends Phaser.Scene {
             const off = this.ELEM_OFFSET[cardData.element];
             const nextCardData = off != null ? CARD_DATA_LIST[off + cardData.stars] : null;
             if (nextCardData) {
-              previewCard = new Card(this, -(CARD_WIDTH * SC2) / 2, -H * 0.17, nextCardData);
+              previewCard = new Card(this, -(CARD_WIDTH * SC2) / 2, -H * 0.27, nextCardData);
             }
           } else {
             // 일반 카드: stars + bonusValue 반영된 미리보기
@@ -1176,7 +1191,7 @@ export default class NodeEventScene extends Phaser.Scene {
             const bonusAmtPrv = BONUS_PER_STAR_PRV[cardData.id] ?? 3;
             const nextBonus   = (entry.bonusValue || 0) + bonusAmtPrv;
             const nextMult    = parseFloat(((entry.mult || 1.0) * 1.25).toFixed(2));
-            previewCard = new Card(this, -(CARD_WIDTH * SC2) / 2, -H * 0.17,
+            previewCard = new Card(this, -(CARD_WIDTH * SC2) / 2, -H * 0.27,
               { ...cardData, bonusValue: nextBonus, mult: nextMult }, starsNext);
           }
 
@@ -1195,12 +1210,12 @@ export default class NodeEventScene extends Phaser.Scene {
               `\n밸류 ×${(entry.mult ?? 1).toFixed(2)} → ×${((entry.mult ?? 1) * 1.25).toFixed(2)}`
             : '';
 
-          const resDesc = this.add.text(0, H * 0.18,
+          const resDesc = this.add.text(0, H * 0.24,
             `[${i18n.t(cardData.nameKey)}]\n${'★'.repeat(starsNow)}  →  ${'★'.repeat(starsNext)}${bonusLabel}`, {
               fontFamily: FONT_B, fontSize: '20px', color: '#f1c40f', align: 'center'
             }).setOrigin(0.5);
 
-          const confirmBtn = this.makeButton(0, H * 0.32, i18n.t('confirm') || '확인', 0x1a5c1a, () => {
+          const confirmBtn = this.makeButton(0, H * 0.40, i18n.t('confirm') || '확인', 0x1a5c1a, () => {
             if (isElemental) {
               this.closeEvent({ upgradeStarCardId: entry.cardId });
             } else {
@@ -1277,7 +1292,10 @@ export default class NodeEventScene extends Phaser.Scene {
       const cardData = CARD_DATA_LIST.find(c => c.id === entry.cardId);
       if (!cardData) return;
       const currentMult = entry.mult ?? 1.0;
-      const nextMult    = parseFloat((currentMult * multGain).toFixed(2));
+      const nextMult    = parseFloat((currentMult + (multGain - 1)).toFixed(2));
+      const globalMult  = this.data_.playerCardMult ?? 1.0;
+      const effCurrent  = parseFloat((currentMult * globalMult).toFixed(2));
+      const effNext     = parseFloat((nextMult     * globalMult).toFixed(2));
 
       // cx = 카드 중심 X (listCont 기준)
       const cx = i * (scaledW + gapX) - maskW / 2 + scaledW / 2 + 20;
@@ -1288,11 +1306,11 @@ export default class NodeEventScene extends Phaser.Scene {
       const isMaxed        = effectiveStars >= 5;
       const canUpgrade     = isStar ? !isMaxed : true;
 
-      const totalMult = parseFloat(((entry.mult ?? 1) * (this.data_.playerCardMult ?? 1)).toFixed(4));
+      const totalMult = parseFloat((currentMult * globalMult).toFixed(4));
       const card = new Card(this, cx - scaledW / 2, cy - scaledH / 2,
         !isElemental
           ? { ...cardData, bonusValue: entry.bonusValue, mult: totalMult }
-          : { ...cardData, mult: parseFloat((cardData.mult * (this.data_.playerCardMult ?? 1)).toFixed(4)) },
+          : { ...cardData, mult: totalMult },
         !isElemental ? effectiveStars : undefined);
       card.setScale(CARD_SC);
 
@@ -1315,7 +1333,7 @@ export default class NodeEventScene extends Phaser.Scene {
         }).setOrigin(0.5, 1);
       } else if (multGain !== 1.0 && canUpgrade) {
         label = this.add.text(cx, cy - scaledH / 2 - 4,
-          `×${currentMult.toFixed(1)}→×${nextMult.toFixed(1)}`, {
+          `×${effCurrent.toFixed(1)}→×${effNext.toFixed(1)}`, {
           fontFamily: FONT_B, fontSize: '12px', color, stroke: '#000', strokeThickness: 2,
         }).setOrigin(0.5, 1);
       }
@@ -1895,6 +1913,7 @@ export default class NodeEventScene extends Phaser.Scene {
         playerShieldMult: this.data_.playerShieldMult,
         playerEquipment:  this.data_.playerEquipment ?? [],
         isFinalBoss:      isFinal,
+        mapStage:         this.data_.mapStage ?? 0,
       });
       // NodeEventScene 자신은 종료 (BattleScene이 nodeEventComplete 직접 발행)
       this.scene.stop();

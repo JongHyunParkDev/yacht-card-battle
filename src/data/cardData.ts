@@ -222,6 +222,6 @@ export const CARD_DATA_LIST: CardData[] = [
     spriteRow: 5, spriteCol: 4,
     attrIndex: ELEMENT_ATTR_INDEX.normal,
     key: 'hp',
-    value: 10, mult: 1,
+    value: 5, mult: 1,
   },
 ];

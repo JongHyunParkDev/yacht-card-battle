@@ -191,8 +191,8 @@ export default class MainScene extends Phaser.Scene {
             this.playerMaxHp += s.maxHp;
             this.playerHp    += s.maxHp;
           }
-          if (s.cardMult)   this.playerCardMult   *= s.cardMult;
-          if (s.shieldMult) this.playerShieldMult *= s.shieldMult;
+          if (s.cardMult)   this.playerCardMult   = parseFloat((this.playerCardMult   + (s.cardMult   - 1)).toFixed(4));
+          if (s.shieldMult) this.playerShieldMult = parseFloat((this.playerShieldMult + (s.shieldMult - 1)).toFixed(4));
         }
       });
     }
@@ -429,8 +429,12 @@ export default class MainScene extends Phaser.Scene {
     this.scene.start('IntroScene');
   }
 
-  /** 게임 오버 / 클리어 시 영구 기록 저장 (골드·장비는 런이 끝나도 보존) */
-  private async saveLegacyData(reachedLayer: number) {
+  /**
+   * 런 종료 시 영구 기록 저장.
+   * isDeath=true  → 사망 런: currentGold/currentEquipment 초기화만, totalGold/allEquipment 누적 안 함
+   * isDeath=false → 클리어: totalGold/allEquipment 누적
+   */
+  private async saveLegacyData(reachedLayer: number, isDeath: boolean) {
     // @ts-ignore
     if (typeof require === 'undefined') return;
     try {
@@ -441,6 +445,7 @@ export default class MainScene extends Phaser.Scene {
         equipment: [...this.playerEquipment],
         reached:   reachedLayer,
         character: this.character?.id ?? 'unknown',
+        isDeath,
       });
     } catch (e) {
       console.warn('Legacy 저장 실패', e);
@@ -1370,6 +1375,7 @@ export default class MainScene extends Phaser.Scene {
       playerEquipment: [...this.playerEquipment],
       maxEquipSlots:   this.maxEquipSlots,
       characterWeapon: this.character?.weapon ?? 'swordShield',
+      mapStage:        this.completedElements.length,
       deck:            this.playerDeck.map(e => ({
         cardId:     e.card.id,
         count:      e.count,
@@ -1451,11 +1457,11 @@ export default class MainScene extends Phaser.Scene {
         this.playerCardMult = parseFloat((this.playerCardMult + (result.cardValueMultiplier - 1)).toFixed(4));
       }
       if (typeof result.shieldMultiplier === 'number') {
-        this.playerShieldMult = parseFloat((this.playerShieldMult * result.shieldMultiplier).toFixed(4));
+        this.playerShieldMult = parseFloat((this.playerShieldMult + (result.shieldMultiplier - 1)).toFixed(4));
       }
       if (typeof result.upgradeCardId === 'number' && typeof result.upgradeCardMult === 'number') {
         const cid = result.upgradeCardId as number;
-        this.cardMultipliers[cid] = (this.cardMultipliers[cid] || 1.0) * (result.upgradeCardMult as number);
+        this.cardMultipliers[cid] = parseFloat(((this.cardMultipliers[cid] || 1.0) + ((result.upgradeCardMult as number) - 1)).toFixed(4));
       }
       if (typeof result.removeCardId === 'number') {
         this.removeOneDeckCard(result.removeCardId);
@@ -1463,7 +1469,8 @@ export default class MainScene extends Phaser.Scene {
 
       // 게임 오버 체크
       if (this.playerHp <= 0) {
-        this.saveLegacyData(node.layer).then(() => {
+        // 사망: isDeath=true → totalGold/allEquipment 누적 없이 currentGold/currentEquipment 초기화
+        this.saveLegacyData(node.layer, true).then(() => {
           this.clearSaveAndReturn();
         });
         return;
@@ -1478,13 +1485,15 @@ export default class MainScene extends Phaser.Scene {
         this.isMoving  = false;
         this.isReady   = false;
         if (node.type === 18) {
-          // 최종 보스 클리어 → 게임 클리어 (일단 처음으로)
-          this.completedElements = [];
-          this.currentMapElement = 'water';
-          this.mapHash = `stage_${Date.now()}_${Math.floor(Math.random() * 999999)}`;
-          this.currentNodeId = -1;
-          this.saveGameState().then(() => {
-            this.scene.restart({ isContinue: true, character: this.character });
+          // 최종 보스 클리어 → 게임 클리어: isDeath=false → totalGold/allEquipment 누적
+          this.saveLegacyData(node.layer, false).then(() => {
+            this.completedElements = [];
+            this.currentMapElement = 'water';
+            this.mapHash = `stage_${Date.now()}_${Math.floor(Math.random() * 999999)}`;
+            this.currentNodeId = -1;
+            this.saveGameState().then(() => {
+              this.scene.restart({ isContinue: true, character: this.character });
+            });
           });
         } else {
           // 일반 보스 처치: 현재 속성 기록 후 다음 맵 결정

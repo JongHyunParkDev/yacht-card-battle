@@ -3,7 +3,7 @@
 > **도구**: Suno / Udio / MusicGen 권장  
 > **공통 제약**: `instrumental only, no vocals, no choir, no humming, no spoken word`  
 > **루프**: 생성 시 `seamless loop` 옵션 사용 (Suno: Style에 "loopable" 명시)  
-> **파일 경로**: `src/assets/sound/bgm/*.mp3`  
+> **파일 경로**: `src/assets/sound/0N.name.mp3` (bgm 서브폴더 없음, 번호 순서로 관리)  
 > **효과음(SFX)**: Web Audio API 합성으로 처리 — 별도 파일 불필요
 
 ---
@@ -218,21 +218,24 @@ seamless loop, instrumental only, no vocals, 128 BPM.
 - 마음에 드는 버전이 나올 때까지 여러 번 재생성 (보통 3~5회)
 
 ### 파일 배치
+
+실제 배치 경로 및 Phaser 로드 키 (`PreloadScene.ts` 기준):
+
 ```
-src/assets/sound/bgm/
-  bgm_intro.mp3
-  bgm_main.mp3
-  bgm_battle_normal.mp3
-  bgm_battle_boss.mp3
-  bgm_battle_final.mp3
-  bgm_event_enhance.mp3
-  bgm_event_treasure.mp3
-  bgm_event_flip.mp3
-  bgm_event_swap.mp3
-  bgm_event_heart.mp3
-  bgm_event_shield.mp3
-  bgm_event_star.mp3
-  bgm_event_poker.mp3
+src/assets/sound/
+  01.intro.mp3          → bgm_intro
+  02.main.mp3           → bgm_main
+  03.battle.mp3         → bgm_battle_normal
+  04.boss.mp3           → bgm_battle_boss
+  05.final_boss.mp3     → bgm_battle_final
+  06.enhance.mp3        → bgm_event_enhance
+  07.treasure.mp3       → bgm_event_treasure
+  08.flip.mp3           → bgm_event_flip
+  09.swap.mp3           → bgm_event_swap
+  10.heart.mp3          → bgm_event_heart
+  11.shield.mp3         → bgm_event_shield
+  12.star.mp3           → bgm_event_star
+  13.poker.mp3          → bgm_event_poker
 ```
 
 > **SFX**: 코드 합성 (`src/utils/Audio.ts` + `src/data/sfxData.ts`) — 별도 파일 불필요
