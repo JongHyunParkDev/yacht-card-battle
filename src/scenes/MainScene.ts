@@ -80,6 +80,7 @@ export default class MainScene extends Phaser.Scene {
   private isMoving      = false;
   private currentNodeId = -1;
   private isReady     = false;
+  private bgmStarted  = false; // update()에서 BGM 최초 1회 재생 플래그
   private currentMapElement: string = 'water';
   private character?: CharacterDef;
   private playerDeck: DeckEntry[] = [];
@@ -133,12 +134,12 @@ export default class MainScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const mapWorldWidth = Math.max(width, 1000);
 
-    // ── BGM 즉시 강제 재생 (씬 start/restart 시 항상 새로 시작, isPlaying 체크 안 함)
+    // ── BGM: 이전 씬 사운드 즉시 정지
+    this.bgmStarted = false;
     this.sound.stopAll();
-    this.time.delayedCall(50, () => {
-      this.sound.play('bgm_main', { loop: true, volume: AudioManager.bgmVol });
-    });
-    this.events.on('resume', () => this.playMainBGM()); // resume은 isPlaying 체크 사용
+    // resume 리스너 누적 방지 (restart마다 중복 등록되지 않도록)
+    this.events.off('resume', this.playMainBGM, this);
+    this.events.on('resume', this.playMainBGM, this);
 
     this.initCamera(mapWorldWidth);
     this.initBackground(mapWorldWidth);
@@ -169,7 +170,7 @@ export default class MainScene extends Phaser.Scene {
     this.playerDef     = state.playerDef     ?? (base?.def     ?? 0);
     this.playerCrit      = state.playerCrit    ?? (base?.crit    ?? 0);
     this.playerCritDmg   = state.playerCritDmg ?? (base?.critDmg ?? 1.5);
-    this.playerEquipment  = state.equipment      ?? [];
+    this.playerEquipment  = state.equipment      ?? this.playerEquipment;
     this.maxEquipSlots    = state.maxEquipSlots  ?? 1;
     this.playerCardMult   = state.playerCardMult   ?? 1.0;
     this.playerShieldMult = state.playerShieldMult ?? 1.0;
@@ -204,6 +205,11 @@ export default class MainScene extends Phaser.Scene {
     this.currentNodeId = (state.currentNodeId !== undefined && state.currentNodeId >= 0)
       ? state.currentNodeId
       : startNode.id;
+
+    // currentNodeId가 현재 맵에 존재하지 않으면 시작 노드로 리셋 (맵 전환 시 id 불일치 방지)
+    if (!allNodes.find(n => n.id === this.currentNodeId)) {
+      this.currentNodeId = startNode.id;
+    }
 
     this.drawNodePaths(allNodes);
     this.activePathsGraphics = this.add.graphics().setDepth(4);
@@ -257,9 +263,12 @@ export default class MainScene extends Phaser.Scene {
     this.registerNodeClickEvents(allNodes, nodeSpritesMap);
 
     this.isReady = true;
+    // BGM: async create 완료 후 game loop 컨텍스트에서 안전하게 재생
+    this.time.delayedCall(0, () => this.playMainBGM());
   }
 
   private playMainBGM() {
+    this.bgmStarted = true;
     if (!this.sound.get('bgm_main')?.isPlaying) {
       this.sound.stopAll();
       this.sound.play('bgm_main', { loop: true, volume: AudioManager.bgmVol });
@@ -267,10 +276,19 @@ export default class MainScene extends Phaser.Scene {
   }
 
   update() {
-    if (!this.isReady || !this.fpsTxt) return;
-    try {
-      this.fpsTxt.setText(`FPS ${Math.round(this.game.loop.actualFps)}`);
-    } catch { /* canvas not ready */ }
+    if (!this.isReady) return;
+
+    // BGM 백업: delayedCall이 실패했을 경우를 위한 fallback
+    if (!this.bgmStarted) {
+      this.bgmStarted = true;
+      this.playMainBGM();
+    }
+
+    if (this.fpsTxt) {
+      try {
+        this.fpsTxt.setText(`FPS ${Math.round(this.game.loop.actualFps)}`);
+      } catch { /* canvas not ready */ }
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -885,7 +903,10 @@ export default class MainScene extends Phaser.Scene {
         const cx  = rightX + cardGap + col * (scaledW + cardGap);
         const cy  = cardAreaStartY + row * (scaledH + cardGap);
 
-        const totalMult = parseFloat(((entry.mult || 1.0) * (this.cardMultipliers[entry.card.id] || 1.0) * this.playerCardMult).toFixed(4));
+        // 방어/쉴드 카드는 playerShieldMult 도 표시에 반영 (전투 계산과 동일하게)
+        const isDefCard = entry.card.key === 'defense' || entry.card.key === 'shield';
+        const totalMult = parseFloat(((entry.mult || 1.0) * (this.cardMultipliers[entry.card.id] || 1.0)
+          * this.playerCardMult * (isDefCard ? this.playerShieldMult : 1.0)).toFixed(4));
         const card = new Card(this, cx, cy, { ...entry.card, mult: totalMult, bonusValue: entry.bonusValue }, entry.stars);
         card.setScale(cardScale);
         card.setInteractive(
@@ -1083,7 +1104,24 @@ export default class MainScene extends Phaser.Scene {
         sprite.setAlpha(1).setScale(NODE_SCALE_DEFAULT).clearTint();
       } else if (node.layer === currentLayer + 1 && currentNode.nextNodes.includes(node.id)) {
         this.tweens.killTweensOf(sprite);
-        sprite.setAlpha(1).setScale(NODE_SCALE_DEFAULT).clearTint();
+        sprite.setAlpha(1).clearTint();
+        // 최종보스 노드는 황금 펄스 효과로 클릭 유도
+        if (node.type === 18) {
+          sprite.setScale(NODE_SCALE_DEFAULT);
+          sprite.setTint(0xffd700);
+          this.tweens.add({
+            targets: sprite,
+            scaleX: NODE_SCALE_DEFAULT * 1.25,
+            scaleY: NODE_SCALE_DEFAULT * 1.25,
+            alpha: 0.75,
+            duration: 700,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut',
+          });
+        } else {
+          sprite.setScale(NODE_SCALE_DEFAULT);
+        }
       } else {
         sprite.setAlpha(0.6).setScale(NODE_SCALE_INACTIVE).clearTint();
         this.tweens.killTweensOf(sprite);
@@ -1214,6 +1252,16 @@ export default class MainScene extends Phaser.Scene {
 
   /** 해시값을 기반으로 항상 동일한 맵 데이터를 생성 */
   private generateMapData(hash: string, width: number, height: number): MapNode[][] {
+    // 최종 보스 맵: 시작 노드 → 최종 보스 노드 (2노드만)
+    if (this.currentMapElement === 'final') {
+      const layerSpacingY = (height - 600) / (MAP_NUM_LAYERS - 1);
+      const startY = height - 200;
+      const bossY  = startY - layerSpacingY;
+      const startNode: MapNode = { id: 0, layer: 0, x: width / 2, y: startY, type: 0,  nextNodes: [1] };
+      const bossNode: MapNode  = { id: 1, layer: 1, x: width / 2, y: bossY,  type: 18, nextNodes: [] };
+      return [[startNode], [bossNode]];
+    }
+
     const { random, randInt } = this.buildSeededRandom(hash);
 
     const mapLayersData: MapNode[][] = [];
@@ -1484,6 +1532,7 @@ export default class MainScene extends Phaser.Scene {
         this.isPaused  = false;
         this.isMoving  = false;
         this.isReady   = false;
+        this.scene.resume(); // triggerNodeEvent에서 pause()된 상태 해제 후 restart
         if (node.type === 18) {
           // 최종 보스 클리어 → 게임 클리어: isDeath=false → totalGold/allEquipment 누적
           this.saveLegacyData(node.layer, false).then(() => {

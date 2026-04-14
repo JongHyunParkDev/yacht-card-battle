@@ -217,13 +217,14 @@ export default class BattleScene extends Phaser.Scene {
       this.enemyAtk       = FINAL_BOSS_PHASES[0].atk;
       this.enemyDef       = FINAL_BOSS_PHASES[0].def;
     } else {
+      const stageDefMult  = 1 + mapStage * 0.15;  // DEF: 맵당 +15%
       this.enemyMaxHp     = Math.round(this.enemyDefData.hp  * stageHpMult);
       this.enemyAtk       = Math.round(this.enemyDefData.atk * stageAtkMult);
-      this.enemyDef       = this.enemyDefData.def;
+      this.enemyDef       = Math.round(this.enemyDefData.def * stageDefMult);
     }
     this.enemyCurrentHp = this.enemyMaxHp;
 
-    console.log(`[스테이지 스케일링] mapStage=${mapStage} hpMult=×${stageHpMult.toFixed(2)} atkMult=×${stageAtkMult.toFixed(2)} → 적HP=${this.enemyMaxHp} 적ATK=${this.enemyAtk}`);
+    console.log(`[스테이지 스케일링] mapStage=${mapStage} hpMult=×${stageHpMult.toFixed(2)} atkMult=×${stageAtkMult.toFixed(2)} → 적HP=${this.enemyMaxHp} 적ATK=${this.enemyAtk} 적DEF=${this.enemyDef}`);
     
     // UI에 보여질 이름: 보스는 전달받은 mobName 사용, 일반은 enemyData에서
     if (!this.data_.isBoss) {
@@ -322,16 +323,17 @@ export default class BattleScene extends Phaser.Scene {
       const eq = getEquipmentById(id);
       if (!eq) continue;
 
-      // 속성별 공격 보너스
+      // 속성별 공격 보너스 — 장비 데이터는 % 정수(예: 10 = 10%), 소수로 변환해서 저장
       if (eq.stats.elementAtkBonus) {
         for (const [elem, val] of Object.entries(eq.stats.elementAtkBonus)) {
-          this.equipElemAtkBonus[elem] = (this.equipElemAtkBonus[elem] ?? 0) + (Number(val) || 0);
+          this.equipElemAtkBonus[elem] = (this.equipElemAtkBonus[elem] ?? 0) + (Number(val) || 0) / 100;
         }
       }
       // 속성별 피해 감소
+      // 속성별 피해 감소 — 장비 데이터는 % 정수(예: 15 = 15%), 소수로 변환해서 저장
       if (eq.stats.elementDefBonus) {
         for (const [elem, val] of Object.entries(eq.stats.elementDefBonus)) {
-          this.equipElemDmgReduce[elem] = (this.equipElemDmgReduce[elem] ?? 0) + (Number(val) || 0);
+          this.equipElemDmgReduce[elem] = (this.equipElemDmgReduce[elem] ?? 0) + (Number(val) || 0) / 100;
         }
       }
       // 특수 효과
@@ -789,9 +791,16 @@ export default class BattleScene extends Phaser.Scene {
       const isSelected = this.selectedCards[i];
       cont.y = areaY;
 
-      // Card 객체 생성 (일반 카드 stars 오버라이드)
+      // Card 객체 생성 — 실제 전투 계산과 동일한 배율을 표시값에 반영
+      // 공격/기타: value × cardMult × playerCardMult
+      // 방어/쉴드: value × cardMult × playerCardMult × playerShieldMult
       const overrideStars = cardData.element === 'normal' ? (cardData as any).stars : undefined;
-      const cardObj = new Card(this, -cardW / 2, -cardH / 2, cardData, overrideStars);
+      const isDefCard = cardData.key === 'defense' || cardData.key === 'shield';
+      const displayMult = parseFloat(((cardData.mult || 1.0)
+        * (this.data_.playerCardMult || 1.0)
+        * (isDefCard ? (this.data_.playerShieldMult || 1.0) : 1.0)).toFixed(4));
+      const displayCardData = { ...cardData, mult: displayMult };
+      const cardObj = new Card(this, -cardW / 2, -cardH / 2, displayCardData, overrideStars);
       cardObj.setScale(cardScale);
       cont.add(cardObj);
 
@@ -1502,19 +1511,22 @@ export default class BattleScene extends Phaser.Scene {
   private showFloatingDamage(x: number, y: number, amount: number, isCrit: boolean, color: string) {
     if (amount <= 0 && color !== '#e74c3c') return;
 
+    // 크리티컬 데미지는 전용 색상 (주황-황금 그라데이션 느낌)
+    const displayColor = isCrit ? '#ff9900' : color;
+
     const txt = this.add.text(x, y, `-${Math.floor(amount)}`, {
       fontFamily: FONT_B,
       fontSize: isCrit ? '58px' : '40px',
-      color: color,
-      stroke: '#000000',
+      color: displayColor,
+      stroke: isCrit ? '#7a3300' : '#000000',
       strokeThickness: isCrit ? 9 : 6,
       fontStyle: isCrit ? 'italic' : 'normal'
     }).setOrigin(0.5);
 
     // 크리 텍스트
     if (isCrit) {
-      const critObj = this.add.text(x, y - 45, 'CRITICAL!', {
-        fontFamily: FONT_B, fontSize: '30px', color: '#ffcc00', stroke: '#000', strokeThickness: 4
+      const critObj = this.add.text(x, y - 45, '★ CRITICAL!', {
+        fontFamily: FONT_B, fontSize: '28px', color: '#ffe566', stroke: '#7a3300', strokeThickness: 4
       }).setOrigin(0.5);
       
       this.tweens.add({
@@ -1683,42 +1695,64 @@ export default class BattleScene extends Phaser.Scene {
     this.updateEnemyHpBar();
     this.updateFinalBossShieldDisplay();
 
-    // 화면 연출
+    // 화면 연출 — 페이즈 전환 연출 (더 극적으로)
     this.sound.stopAll();
-    this.cameras.main.flash(600, 255, 50, 0);
-    this.cameras.main.shake(500, 0.025);
+    this.cameras.main.shake(600, 0.04);
 
     const cx = this.W / 2;
     const cy = this.H / 2;
 
+    // 완전 암전 후 페이즈 정보 표시
     const overlay = this.add.graphics().setDepth(200);
-    overlay.fillStyle(0x000000, 0.6);
+    overlay.fillStyle(0x000000, 1);
     overlay.fillRect(0, 0, this.W, this.H);
+    overlay.setAlpha(0);
 
-    const phaseTxt = this.add.text(cx, cy - 30,
-      `☠ ${this.data_.mobName}\n${phase.label}`, {
-        fontFamily: FONT_B, fontSize: '34px', color: phase.color,
-        align: 'center', stroke: '#000000', strokeThickness: 4,
+    const phaseNumTxt = this.add.text(cx, cy - 80,
+      `— PHASE ${this.finalBossPhase} —`, {
+        fontFamily: FONT_B, fontSize: '22px', color: '#888888',
+        align: 'center',
       }).setOrigin(0.5).setDepth(201).setAlpha(0);
 
-    const descTxt = this.add.text(cx, cy + 40, phase.desc, {
-      fontFamily: FONT_M, fontSize: '17px', color: '#dddddd',
+    const phaseTxt = this.add.text(cx, cy - 20,
+      `${phase.label}`, {
+        fontFamily: FONT_B, fontSize: '48px', color: phase.color,
+        align: 'center', stroke: '#000000', strokeThickness: 6,
+      }).setOrigin(0.5).setDepth(201).setAlpha(0);
+
+    const descTxt = this.add.text(cx, cy + 50, phase.desc, {
+      fontFamily: FONT_M, fontSize: '18px', color: '#dddddd',
       align: 'center',
     }).setOrigin(0.5).setDepth(201).setAlpha(0);
 
+    const hintTxt = this.add.text(cx, cy + 100,
+      `HP 100  |  ATK ${phase.atk}  |  DEF ${phase.def}`, {
+        fontFamily: FONT_L, fontSize: '15px', color: '#aaaaaa',
+        align: 'center',
+      }).setOrigin(0.5).setDepth(201).setAlpha(0);
+
+    // 1단계: 암전
     this.tweens.add({
-      targets: [phaseTxt, descTxt], alpha: 1, y: { from: cy - 10, to: cy - 30 },
-      duration: 350,
+      targets: overlay, alpha: 1, duration: 400,
       onComplete: () => {
-        this.time.delayedCall(1400, () => {
-          this.tweens.add({
-            targets: [overlay, phaseTxt, descTxt], alpha: 0, duration: 350,
-            onComplete: () => {
-              overlay.destroy(); phaseTxt.destroy(); descTxt.destroy();
-              this.statusText.setText('');
-              this.advanceToNextTurn();
-            },
-          });
+        this.cameras.main.flash(300, 255, 80, 0);
+        // 2단계: 텍스트 등장
+        this.tweens.add({
+          targets: [phaseNumTxt, phaseTxt, descTxt, hintTxt], alpha: 1, duration: 400,
+          onComplete: () => {
+            // 3단계: 2.5초 유지 후 페이드 아웃
+            this.time.delayedCall(2500, () => {
+              this.tweens.add({
+                targets: [overlay, phaseNumTxt, phaseTxt, descTxt, hintTxt], alpha: 0, duration: 500,
+                onComplete: () => {
+                  overlay.destroy(); phaseNumTxt.destroy(); phaseTxt.destroy();
+                  descTxt.destroy(); hintTxt.destroy();
+                  this.statusText.setText('');
+                  this.advanceToNextTurn();
+                },
+              });
+            });
+          },
         });
       },
     });
@@ -1812,6 +1846,9 @@ export default class BattleScene extends Phaser.Scene {
     this.battleEnded = true;
     this.isAnimating = true;
     this.enemyIdleTween?.stop();
+
+    // 패배 시 HP를 0으로 강제 설정 (5턴 초과 등 HP가 남은 채로 패배해도 사망 처리)
+    if (!playerWon) this.playerCurrentHp = 0;
 
     // 장비 승리 시 회복 효과
     if (playerWon) {

@@ -92,6 +92,6 @@ export function getNodeFrameName(type: number): string {
   if (type === 13) return 'row2_2';
   if (type === 15) return 'row3_0';
   if (type === 16) return 'row3_1';
-  if (type === 18) return 'row3_2';
+  if (type === 18) return 'row3_3';
   return 'row0_0'; // fallback
 }

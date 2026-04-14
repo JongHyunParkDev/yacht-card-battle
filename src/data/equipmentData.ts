@@ -4,9 +4,9 @@ export type EquipGrade = 'common' | 'uncommon' | 'rare' | 'unique' | 'legendary'
 
 /** 등급별 드롭 확률 (합계 = 1.0) */
 export const EQUIP_GRADE_WEIGHT: Record<EquipGrade, number> = {
-  common:    0.60,
-  uncommon:  0.30,
-  rare:      0.09,
+  common:    0.70,
+  uncommon:  0.27,
+  rare:      0.02,
   unique:    0.009,
   legendary: 0.001,
 };

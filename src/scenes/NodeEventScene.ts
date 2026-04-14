@@ -443,29 +443,106 @@ export default class NodeEventScene extends Phaser.Scene {
         });
         return;
       }
-      // 슬롯 가득 찬 경우 → 교체 화면
+      // 슬롯 가득 찬 경우 → 교체 선택 화면 (아이콘 비교 + 교체 안 함)
       this.tweens.add({
         targets: this.root, alpha: 0, duration: 180,
         onComplete: () => {
           this.root.removeAll(true);
           this.root.setAlpha(1);
-          const replaceTitle = this.makeTitle(i18n.t('treasureReplaceTitle'), -H * 0.32);
-          const newLbl = this.add.text(0, -H * 0.23, `${i18n.t('newEquip')}: ${equip.name}`, {
-            fontFamily: FONT_M, fontSize: '16px', color: EQUIP_GRADE_COLOR[equip.grade],
+
+          const replaceTitle = this.makeTitle(i18n.t('treasureReplaceTitle'), -H * 0.40);
+
+          // ── 새 장비 카드 (상단 중앙) ─────────────────────────────
+          const ICON = Math.min(Math.round(W * 0.12), 80);
+          const newGradeHex = parseInt(EQUIP_GRADE_COLOR[equip.grade].replace('#', '0x'));
+          const newCont = this.add.container(0, -H * 0.28);
+          const newBg = this.add.graphics();
+          newBg.fillStyle(0x10101e, 0.95);
+          newBg.lineStyle(2.5, newGradeHex, 1);
+          newBg.fillRoundedRect(-ICON / 2, -ICON / 2, ICON, ICON, 8);
+          newBg.strokeRoundedRect(-ICON / 2, -ICON / 2, ICON, ICON, 8);
+          const newSprite = this.add.sprite(0, -4, equip.texture, equip.frame);
+          newSprite.setDisplaySize(Math.round(ICON * 0.65), Math.round(ICON * 0.65));
+          const newGradeLbl = this.add.text(0, -ICON / 2 + 4, EQUIP_GRADE_LABEL[equip.grade], {
+            fontFamily: FONT_B, fontSize: '10px', color: EQUIP_GRADE_COLOR[equip.grade],
+          }).setOrigin(0.5, 0);
+          const newNameLbl = this.add.text(0, ICON / 2 + 4, equip.name, {
+            fontFamily: FONT_M, fontSize: '12px', color: EQUIP_GRADE_COLOR[equip.grade],
+            align: 'center', wordWrap: { width: ICON + 40 },
+          }).setOrigin(0.5, 0);
+          newCont.add([newBg, newSprite, newGradeLbl, newNameLbl]);
+
+          const newStatsStr = formatEquipStats(equip.stats) + (equip.special ? `\n★ ${equip.special.desc}` : '');
+          const newStatsTxt = this.add.text(ICON / 2 + 14, -H * 0.28, newStatsStr, {
+            fontFamily: FONT_M, fontSize: '12px', color: EQUIP_GRADE_COLOR[equip.grade], lineSpacing: 3,
+          }).setOrigin(0, 0.5);
+
+          // ── 구분선 + 안내 ────────────────────────────────────────
+          const div2    = this.makeDivider(-H * 0.14);
+          const guideTxt = this.add.text(0, -H * 0.09, '교체할 장비를 선택하거나 건너뛰세요', {
+            fontFamily: FONT_M, fontSize: '13px', color: '#888888',
           }).setOrigin(0.5);
-          const div2 = this.makeDivider(-H * 0.17);
-          const replaceBtns = playerEquipment.map((eqId, idx) => {
+
+          // ── 현재 장착 장비 목록 (아이콘 + 스탯 + 교체 버튼) ────
+          const slotItems: Phaser.GameObjects.GameObject[] = [];
+          playerEquipment.forEach((eqId, idx) => {
             const owned = getEquipmentById(eqId);
-            const lbl   = owned ? `${owned.name}  [${EQUIP_GRADE_LABEL[owned.grade]}]` : eqId;
-            return this.makeButton(0, -H * 0.09 + idx * (H * 0.13), lbl, 0x5c1a1a, () => {
+            if (!owned) return;
+            const ownedGradeHex = parseInt(EQUIP_GRADE_COLOR[owned.grade].replace('#', '0x'));
+            const rowY = -H * 0.02 + idx * (ICON + 28 + H * 0.035);
+
+            // 아이콘 컨테이너
+            const slotCont = this.add.container(-W * 0.28, rowY);
+            const slotBg = this.add.graphics();
+            slotBg.fillStyle(0x1a1a2e, 1);
+            slotBg.lineStyle(2, ownedGradeHex, 0.85);
+            slotBg.fillRoundedRect(-ICON / 2, -ICON / 2, ICON, ICON, 6);
+            slotBg.strokeRoundedRect(-ICON / 2, -ICON / 2, ICON, ICON, 6);
+            const slotSprite = this.add.sprite(0, 0, owned.texture, owned.frame);
+            slotSprite.setDisplaySize(Math.round(ICON * 0.65), Math.round(ICON * 0.65));
+            const slotNameLbl = this.add.text(0, ICON / 2 + 3, `${owned.name}`, {
+              fontFamily: FONT_M, fontSize: '10px', color: EQUIP_GRADE_COLOR[owned.grade],
+              align: 'center', wordWrap: { width: ICON + 30 },
+            }).setOrigin(0.5, 0);
+            slotCont.add([slotBg, slotSprite, slotNameLbl]);
+            slotCont.setSize(ICON, ICON);
+            slotCont.setInteractive({ useHandCursor: true });
+
+            // 호버 툴팁
+            slotCont.on('pointerover', () => {
+              let txt = `[${EQUIP_GRADE_LABEL[owned.grade]}] ${owned.name}\n`;
+              txt += `─────────────────\n`;
+              txt += formatEquipStats(owned.stats);
+              if (owned.special) txt += `\n★ ${owned.special.desc}`;
+              tooltipText.setText(txt);
+              tooltipCont.setVisible(true);
+              const b = tooltipText.getBounds();
+              const tw = b.width + 24; const th = b.height + 20;
+              tooltipBg.clear();
+              tooltipBg.fillStyle(0x0a0a14, 0.96);
+              tooltipBg.lineStyle(2, ownedGradeHex, 1);
+              tooltipBg.fillRoundedRect(0, 0, tw, th, 7);
+              tooltipBg.strokeRoundedRect(0, 0, tw, th, 7);
+              tooltipCont.setPosition(-W * 0.28 - tw / 2, rowY - ICON / 2 - th - 8);
+            });
+            slotCont.on('pointerout', () => tooltipCont.setVisible(false));
+
+            // 스탯 텍스트 (아이콘 우측)
+            const ownedStatsStr = formatEquipStats(owned.stats) + (owned.special ? `\n★ ${owned.special.desc}` : '');
+            const ownedStatsTxt = this.add.text(-W * 0.28 + ICON / 2 + 12, rowY, ownedStatsStr, {
+              fontFamily: FONT_L, fontSize: '11px', color: '#bbbbbb', lineSpacing: 2,
+            }).setOrigin(0, 0.5);
+
+            // 교체 버튼
+            const replBtn = this.makeButton(W * 0.24, rowY, '교체', 0x5c1a1a, () => {
               this.tweens.add({
                 targets: this.root, alpha: 0, duration: 180,
                 onComplete: () => {
                   this.root.removeAll(true);
                   this.root.setAlpha(1);
-                  const resTitle2   = this.makeHeader('row0_3', '장비 교체 완료!', -H * 0.37);
-                  const resText     = this.add.text(0, -H * 0.15,
-                    `${owned?.name ?? eqId}\n→\n${equip.name}`, {
+                  const resTitle2 = this.makeHeader('row0_3', '장비 교체 완료!', -H * 0.32);
+                  const resText   = this.add.text(0, -H * 0.15,
+                    `${owned.name}\n→\n${equip.name}`, {
                       fontFamily: FONT_M, fontSize: '20px', color: '#cccccc', align: 'center',
                     }).setOrigin(0.5);
                   const confirmBtn2 = this.makeButton(
@@ -476,9 +553,19 @@ export default class NodeEventScene extends Phaser.Scene {
                   this.root.add([resTitle2, resText, confirmBtn2]);
                 },
               });
-            }, Math.round(W * 0.46), 56);
+            }, Math.round(W * 0.14), 48);
+
+            slotItems.push(slotCont, ownedStatsTxt, replBtn);
           });
-          this.root.add([replaceTitle, newLbl, div2, ...replaceBtns]);
+
+          // ── 교체 안 함 버튼 ──────────────────────────────────────
+          const skipY = -H * 0.02 + playerEquipment.length * (ICON + 28 + H * 0.035) + H * 0.06;
+          const skipBtn = this.makeButton(0, skipY, '교체 안 함  (획득 포기)', 0x1e1e1e,
+            () => this.closeEvent({}),
+            Math.round(W * 0.32), 52,
+          );
+
+          this.root.add([replaceTitle, newCont, newStatsTxt, div2, guideTxt, ...slotItems, skipBtn]);
         },
       });
     };
@@ -1871,7 +1958,7 @@ export default class NodeEventScene extends Phaser.Scene {
     const bossFrame: Partial<Record<number, string>> = {
       [NODE_TYPE.BOSS_WATER]: 'row2_0', [NODE_TYPE.BOSS_FIRE]: 'row2_1',
       [NODE_TYPE.BOSS_GRASS]: 'row2_2', [NODE_TYPE.BOSS_LIGHTNING]: 'row3_0',
-      [NODE_TYPE.BOSS_EARTH]: 'row3_1', [NODE_TYPE.BOSS_FINAL]: 'row3_2',
+      [NODE_TYPE.BOSS_EARTH]: 'row3_1', [NODE_TYPE.BOSS_FINAL]: 'row3_3',
     };
     const title = this.makeHeader(
       bossFrame[nodeType] ?? 'row2_0',
