@@ -10,6 +10,8 @@ import {
 } from '@src/data/equipmentData';
 import type { WeaponType } from '@src/scenes/CharacterSelectScene';
 import Card, { CARD_WIDTH, CARD_HEIGHT } from '@src/objects/Card';
+import { createTreasureEvent as _createTreasureEvent } from '@src/events/TreasureEvent';
+import { createIndianPokerEvent as _createIndianPokerEvent, createDeckPurificationEvent as _createDeckPurificationEvent } from '@src/events/IndianPokerEvent';
 
 // ─── 이벤트 데이터 타입 ────────────────────────────────────────────────────────
 
@@ -103,7 +105,7 @@ export default class NodeEventScene extends Phaser.Scene {
   // 공통 UI 헬퍼 (root 기준 상대 좌표)
   // ─────────────────────────────────────────────────────────────────────────────
 
-  private makeDivider(y: number, w?: number): Phaser.GameObjects.Graphics {
+  public makeDivider(y: number, w?: number): Phaser.GameObjects.Graphics {
     const g = this.add.graphics();
     g.lineStyle(1, COLOR_GOLD, 0.3);
     const width = w ?? this.W * 0.4;
@@ -112,7 +114,7 @@ export default class NodeEventScene extends Phaser.Scene {
   }
 
   /** 타이틀 텍스트 */
-  private makeTitle(text: string, y: number, color = '#d4af37'): Phaser.GameObjects.Text {
+  public makeTitle(text: string, y: number, color = '#d4af37'): Phaser.GameObjects.Text {
     return this.add.text(0, y, text, {
       fontFamily: FONT_B, fontSize: '34px', color,
     }).setOrigin(0.5);
@@ -122,7 +124,7 @@ export default class NodeEventScene extends Phaser.Scene {
    * 노드 아이콘(map_nodes 프레임) + 타이틀 텍스트를 하나의 Container로 반환.
    * frame 예: 'row0_0', 'row1_2', 'row2_0' 등
    */
-  private makeHeader(
+  public makeHeader(
     frame: string, text: string, y: number,
     iconSize = 64, color = '#d4af37',
   ): Phaser.GameObjects.Container {
@@ -143,7 +145,7 @@ export default class NodeEventScene extends Phaser.Scene {
 
 
   /** 본문 텍스트 */
-  private makeBody(text: string, y: number): Phaser.GameObjects.Text {
+  public makeBody(text: string, y: number): Phaser.GameObjects.Text {
     return this.add.text(0, y, text, {
       fontFamily: FONT_M, fontSize: '18px', color: '#cccccc',
       wordWrap: { width: this.W * 0.7 }, align: 'center',
@@ -151,7 +153,7 @@ export default class NodeEventScene extends Phaser.Scene {
   }
 
   /** 버튼 */
-  private makeButton(
+  public makeButton(
     x: number, y: number, label: string,
     bgColor: number, onDown: () => void,
     w?: number, h = 54,
@@ -181,7 +183,7 @@ export default class NodeEventScene extends Phaser.Scene {
     return btn;
   }
 
-  private closeEvent(result: Record<string, unknown>) {
+  public closeEvent(result: Record<string, unknown>) {
     // 골드 변화가 있으면 시각적으로 보여주고 결과 확인 버튼 생성
     if (result.goldDelta && typeof result.goldDelta === 'number') {
       const delta = result.goldDelta;
@@ -245,7 +247,7 @@ export default class NodeEventScene extends Phaser.Scene {
   private startX = 0;
   private maxScrollX = 0;
 
-  private elementName(el: string): string {
+  public elementName(el: string): string {
     const key = 'elem' + el.charAt(0).toUpperCase() + el.slice(1);
     return i18n.t(key) || el;
   }
@@ -374,319 +376,7 @@ export default class NodeEventScene extends Phaser.Scene {
   private createTreasureEvent() {
     this.sound.stopAll();
     this.sound.play('bgm_event_treasure', { loop: true, volume: AudioManager.bgmVol });
-
-    const H = this.H;
-    const W = this.W;
-    const { playerEquipment, maxEquipSlots } = this.data_;
-    const isFull = playerEquipment.length >= maxEquipSlots;
-
-    // 이미 보유한 장비 제외 후 가중치 랜덤 3개 추출
-    const drawn = drawEquipment(3, playerEquipment);
-
-    const slotText = i18n.f('treasureSlot', { cur: playerEquipment.length, max: maxEquipSlots });
-    const title   = this.makeHeader('row0_3', i18n.t('treasureTitle'), -H * 0.35);
-    const slotLbl = this.add.text(0, -H * 0.275, slotText, {
-      fontFamily: FONT_M, fontSize: '16px',
-      color: isFull ? '#e74c3c' : '#aaaaaa',
-    }).setOrigin(0.5);
-    const hintTxt = this.add.text(0, -H * 0.235,
-      '아이콘에 마우스를 올리면 상세 정보를 볼 수 있습니다', {
-        fontFamily: FONT_L, fontSize: '12px', color: '#666688',
-      }).setOrigin(0.5);
-    const divider = this.makeDivider(-H * 0.19);
-
-    /** 장비 선택 결과 빌드 */
-    const buildResult = (equip: EquipmentData) => {
-      const r: Record<string, unknown> = { equipment: equip.id };
-      const s = equip.stats;
-      if (s.atk)        r.atkDelta            = s.atk;
-      if (s.def)        r.defDelta            = s.def;
-      if (s.crit)       r.critDelta           = s.crit;
-      if (s.critDmg)    r.critDmgDelta        = s.critDmg;
-      if (s.maxHp)      r.maxHpDelta          = s.maxHp;
-      if (s.cardMult)   r.cardValueMultiplier = s.cardMult;
-      if (s.shieldMult) r.shieldMultiplier    = s.shieldMult;
-      return r;
-    };
-
-    /** 장비 선택 → 슬롯이 비었으면 획득, 가득 찼으면 교체 화면 */
-    const pickEquip = (equip: EquipmentData) => {
-      const result = buildResult(equip);
-      if (!isFull) {
-        this.tweens.add({
-          targets: this.root, alpha: 0, duration: 180,
-          onComplete: () => {
-            this.root.removeAll(true);
-            this.root.setAlpha(1);
-            const resTitle   = this.makeHeader('row0_3', '장비 획득!', -H * 0.37);
-            const gradeColor = EQUIP_GRADE_COLOR[equip.grade];
-            const nameText   = this.add.text(0, -H * 0.22, equip.name, {
-              fontFamily: FONT_B, fontSize: '28px', color: gradeColor,
-            }).setOrigin(0.5);
-            const statsText  = this.add.text(0, -H * 0.12, formatEquipStats(equip.stats), {
-              fontFamily: FONT_M, fontSize: '18px', color: '#cccccc', align: 'center',
-            }).setOrigin(0.5);
-            const specialText = equip.special
-              ? this.add.text(0, -H * 0.02, `★ ${equip.special.desc}`, {
-                  fontFamily: FONT_M, fontSize: '16px', color: '#f5cc4a',
-                }).setOrigin(0.5)
-              : null;
-            const confirmBtn = this.makeButton(
-              0, H * 0.25, i18n.t('confirm') || '확인', 0x3a2800,
-              () => this.closeEvent(result),
-              Math.round(W * 0.28), 56,
-            );
-            const items: Phaser.GameObjects.GameObject[] = [resTitle, nameText, statsText, confirmBtn];
-            if (specialText) items.splice(3, 0, specialText);
-            this.root.add(items);
-          },
-        });
-        return;
-      }
-      // 슬롯 가득 찬 경우 → 교체 선택 화면 (아이콘 비교 + 교체 안 함)
-      this.tweens.add({
-        targets: this.root, alpha: 0, duration: 180,
-        onComplete: () => {
-          this.root.removeAll(true);
-          this.root.setAlpha(1);
-
-          const replaceTitle = this.makeTitle(i18n.t('treasureReplaceTitle'), -H * 0.40);
-
-          // ── 새 장비 카드 (상단 중앙) ─────────────────────────────
-          const ICON = Math.min(Math.round(W * 0.12), 80);
-          const newGradeHex = parseInt(EQUIP_GRADE_COLOR[equip.grade].replace('#', '0x'));
-          const newCont = this.add.container(0, -H * 0.28);
-          const newBg = this.add.graphics();
-          newBg.fillStyle(0x10101e, 0.95);
-          newBg.lineStyle(2.5, newGradeHex, 1);
-          newBg.fillRoundedRect(-ICON / 2, -ICON / 2, ICON, ICON, 8);
-          newBg.strokeRoundedRect(-ICON / 2, -ICON / 2, ICON, ICON, 8);
-          const newSprite = this.add.sprite(0, -4, equip.texture, equip.frame);
-          newSprite.setDisplaySize(Math.round(ICON * 0.65), Math.round(ICON * 0.65));
-          const newGradeLbl = this.add.text(0, -ICON / 2 + 4, EQUIP_GRADE_LABEL[equip.grade], {
-            fontFamily: FONT_B, fontSize: '10px', color: EQUIP_GRADE_COLOR[equip.grade],
-          }).setOrigin(0.5, 0);
-          const newNameLbl = this.add.text(0, ICON / 2 + 4, equip.name, {
-            fontFamily: FONT_M, fontSize: '12px', color: EQUIP_GRADE_COLOR[equip.grade],
-            align: 'center', wordWrap: { width: ICON + 40 },
-          }).setOrigin(0.5, 0);
-          newCont.add([newBg, newSprite, newGradeLbl, newNameLbl]);
-
-          const newStatsStr = formatEquipStats(equip.stats) + (equip.special ? `\n★ ${equip.special.desc}` : '');
-          const newStatsTxt = this.add.text(ICON / 2 + 14, -H * 0.28, newStatsStr, {
-            fontFamily: FONT_M, fontSize: '12px', color: EQUIP_GRADE_COLOR[equip.grade], lineSpacing: 3,
-          }).setOrigin(0, 0.5);
-
-          // ── 구분선 + 안내 ────────────────────────────────────────
-          const div2    = this.makeDivider(-H * 0.14);
-          const guideTxt = this.add.text(0, -H * 0.09, '교체할 장비를 선택하거나 건너뛰세요', {
-            fontFamily: FONT_M, fontSize: '13px', color: '#888888',
-          }).setOrigin(0.5);
-
-          // ── 현재 장착 장비 목록 (아이콘 + 스탯 + 교체 버튼) ────
-          const slotItems: Phaser.GameObjects.GameObject[] = [];
-          playerEquipment.forEach((eqId, idx) => {
-            const owned = getEquipmentById(eqId);
-            if (!owned) return;
-            const ownedGradeHex = parseInt(EQUIP_GRADE_COLOR[owned.grade].replace('#', '0x'));
-            const rowY = -H * 0.02 + idx * (ICON + 28 + H * 0.035);
-
-            // 아이콘 컨테이너
-            const slotCont = this.add.container(-W * 0.28, rowY);
-            const slotBg = this.add.graphics();
-            slotBg.fillStyle(0x1a1a2e, 1);
-            slotBg.lineStyle(2, ownedGradeHex, 0.85);
-            slotBg.fillRoundedRect(-ICON / 2, -ICON / 2, ICON, ICON, 6);
-            slotBg.strokeRoundedRect(-ICON / 2, -ICON / 2, ICON, ICON, 6);
-            const slotSprite = this.add.sprite(0, 0, owned.texture, owned.frame);
-            slotSprite.setDisplaySize(Math.round(ICON * 0.65), Math.round(ICON * 0.65));
-            const slotNameLbl = this.add.text(0, ICON / 2 + 3, `${owned.name}`, {
-              fontFamily: FONT_M, fontSize: '10px', color: EQUIP_GRADE_COLOR[owned.grade],
-              align: 'center', wordWrap: { width: ICON + 30 },
-            }).setOrigin(0.5, 0);
-            slotCont.add([slotBg, slotSprite, slotNameLbl]);
-            slotCont.setSize(ICON, ICON);
-            slotCont.setInteractive({ useHandCursor: true });
-
-            // 호버 툴팁
-            slotCont.on('pointerover', () => {
-              let txt = `[${EQUIP_GRADE_LABEL[owned.grade]}] ${owned.name}\n`;
-              txt += `─────────────────\n`;
-              txt += formatEquipStats(owned.stats);
-              if (owned.special) txt += `\n★ ${owned.special.desc}`;
-              tooltipText.setText(txt);
-              tooltipCont.setVisible(true);
-              const b = tooltipText.getBounds();
-              const tw = b.width + 24; const th = b.height + 20;
-              tooltipBg.clear();
-              tooltipBg.fillStyle(0x0a0a14, 0.96);
-              tooltipBg.lineStyle(2, ownedGradeHex, 1);
-              tooltipBg.fillRoundedRect(0, 0, tw, th, 7);
-              tooltipBg.strokeRoundedRect(0, 0, tw, th, 7);
-              tooltipCont.setPosition(-W * 0.28 - tw / 2, rowY - ICON / 2 - th - 8);
-            });
-            slotCont.on('pointerout', () => tooltipCont.setVisible(false));
-
-            // 스탯 텍스트 (아이콘 우측)
-            const ownedStatsStr = formatEquipStats(owned.stats) + (owned.special ? `\n★ ${owned.special.desc}` : '');
-            const ownedStatsTxt = this.add.text(-W * 0.28 + ICON / 2 + 12, rowY, ownedStatsStr, {
-              fontFamily: FONT_L, fontSize: '11px', color: '#bbbbbb', lineSpacing: 2,
-            }).setOrigin(0, 0.5);
-
-            // 교체 버튼
-            const replBtn = this.makeButton(W * 0.24, rowY, '교체', 0x5c1a1a, () => {
-              this.tweens.add({
-                targets: this.root, alpha: 0, duration: 180,
-                onComplete: () => {
-                  this.root.removeAll(true);
-                  this.root.setAlpha(1);
-                  const resTitle2 = this.makeHeader('row0_3', '장비 교체 완료!', -H * 0.32);
-                  const resText   = this.add.text(0, -H * 0.15,
-                    `${owned.name}\n→\n${equip.name}`, {
-                      fontFamily: FONT_M, fontSize: '20px', color: '#cccccc', align: 'center',
-                    }).setOrigin(0.5);
-                  const confirmBtn2 = this.makeButton(
-                    0, H * 0.25, i18n.t('confirm') || '확인', 0x5c1a1a,
-                    () => this.closeEvent({ ...result, replaceEquipment: eqId }),
-                    Math.round(W * 0.28), 56,
-                  );
-                  this.root.add([resTitle2, resText, confirmBtn2]);
-                },
-              });
-            }, Math.round(W * 0.14), 48);
-
-            slotItems.push(slotCont, ownedStatsTxt, replBtn);
-          });
-
-          // ── 교체 안 함 버튼 ──────────────────────────────────────
-          const skipY = -H * 0.02 + playerEquipment.length * (ICON + 28 + H * 0.035) + H * 0.06;
-          const skipBtn = this.makeButton(0, skipY, '교체 안 함  (획득 포기)', 0x1e1e1e,
-            () => this.closeEvent({}),
-            Math.round(W * 0.32), 52,
-          );
-
-          this.root.add([replaceTitle, newCont, newStatsTxt, div2, guideTxt, ...slotItems, skipBtn]);
-        },
-      });
-    };
-
-    // ── 아이콘 카드 배치 ──────────────────────────────────────────────────────
-    const CARD_SIZE = Math.min(Math.round(W * 0.18), 130);
-    const CARD_GAP  = Math.round(W * 0.04);
-    const totalW    = drawn.length * CARD_SIZE + (drawn.length - 1) * CARD_GAP;
-    const cardStartX = -totalW / 2;
-    const cardY      = -H * 0.04;
-
-    // 공유 툴팁 (최상단 depth)
-    const tooltipCont = this.add.container(0, 0).setDepth(3000).setVisible(false);
-    const tooltipBg   = this.add.graphics();
-    const tooltipText = this.add.text(12, 10, '', {
-      fontFamily: FONT_M, fontSize: '14px', color: '#eeeeee', lineSpacing: 5,
-      wordWrap: { width: 260 },
-    });
-    tooltipCont.add([tooltipBg, tooltipText]);
-    this.root.add(tooltipCont);
-
-    const showTooltip = (equip: EquipmentData, anchorX: number, anchorY: number) => {
-      const gradeColor = EQUIP_GRADE_COLOR[equip.grade];
-      const gradeLabel = EQUIP_GRADE_LABEL[equip.grade];
-      let txt = `[${gradeLabel}] ${equip.name}\n`;
-      txt += `─────────────────\n`;
-      txt += formatEquipStats(equip.stats);
-      if (equip.special) txt += `\n★ ${equip.special.desc}`;
-
-      tooltipText.setText(txt);
-      tooltipCont.setVisible(true);
-
-      const b  = tooltipText.getBounds();
-      const tw = b.width + 24;
-      const th = b.height + 20;
-      tooltipBg.clear();
-      tooltipBg.fillStyle(0x0a0a14, 0.96);
-      tooltipBg.lineStyle(2, parseInt(gradeColor.replace('#', '0x')), 1);
-      tooltipBg.fillRoundedRect(0, 0, tw, th, 7);
-      tooltipBg.strokeRoundedRect(0, 0, tw, th, 7);
-
-      let tx = anchorX - tw / 2;
-      let ty = anchorY - CARD_SIZE / 2 - th - 12;
-      if (ty < -H / 2 + 10) ty = anchorY + CARD_SIZE / 2 + 12;
-      tooltipCont.setPosition(tx, ty);
-    };
-
-    const iconCards = drawn.map((equip, i) => {
-      const cx = cardStartX + i * (CARD_SIZE + CARD_GAP) + CARD_SIZE / 2;
-      const cy = cardY;
-      const gradeHex = parseInt(EQUIP_GRADE_COLOR[equip.grade].replace('#', '0x'));
-
-      const cont = this.add.container(cx, cy);
-
-      const bg = this.add.graphics();
-      bg.fillStyle(0x10101e, 0.95);
-      bg.lineStyle(2.5, gradeHex, 1);
-      bg.fillRoundedRect(-CARD_SIZE / 2, -CARD_SIZE / 2, CARD_SIZE, CARD_SIZE, 10);
-      bg.strokeRoundedRect(-CARD_SIZE / 2, -CARD_SIZE / 2, CARD_SIZE, CARD_SIZE, 10);
-
-      const iconSize = Math.round(CARD_SIZE * 0.62);
-      const sprite   = this.add.sprite(0, -8, equip.texture, equip.frame);
-      sprite.setDisplaySize(iconSize, iconSize);
-
-      const nameLbl = this.add.text(0, CARD_SIZE / 2 - 22, equip.name, {
-        fontFamily: FONT_M, fontSize: '11px',
-        color: EQUIP_GRADE_COLOR[equip.grade],
-        align: 'center', wordWrap: { width: CARD_SIZE - 8 },
-      }).setOrigin(0.5, 0);
-
-      const gradeLbl = this.add.text(0, -CARD_SIZE / 2 + 6, EQUIP_GRADE_LABEL[equip.grade], {
-        fontFamily: FONT_B, fontSize: '10px',
-        color: EQUIP_GRADE_COLOR[equip.grade],
-      }).setOrigin(0.5, 0);
-
-      cont.add([bg, sprite, gradeLbl, nameLbl]);
-      cont.setSize(CARD_SIZE, CARD_SIZE);
-      cont.setInteractive({ useHandCursor: true });
-
-      const drawBg = (hover: boolean) => {
-        bg.clear();
-        bg.fillStyle(hover ? 0x1a1a30 : 0x10101e, hover ? 0.98 : 0.95);
-        bg.lineStyle(hover ? 3 : 2.5, gradeHex, 1);
-        bg.fillRoundedRect(-CARD_SIZE / 2, -CARD_SIZE / 2, CARD_SIZE, CARD_SIZE, 10);
-        bg.strokeRoundedRect(-CARD_SIZE / 2, -CARD_SIZE / 2, CARD_SIZE, CARD_SIZE, 10);
-      };
-
-      cont.on('pointerover', () => {
-          AudioManager.play('CARD_HOVER');
-        drawBg(true);
-        this.tweens.add({ targets: cont, scaleX: 1.06, scaleY: 1.06, duration: 100 });
-        showTooltip(equip, cx, cy);
-      });
-      cont.on('pointerout', () => {
-        drawBg(false);
-        this.tweens.add({ targets: cont, scaleX: 1, scaleY: 1, duration: 100 });
-        tooltipCont.setVisible(false);
-      });
-      cont.on('pointerdown', () => {
-          AudioManager.play('CARD_SELECT');
-        pickEquip(equip);
-      });
-
-      return cont;
-    });
-
-    const skipBtn = this.makeButton(
-      0, H * 0.36,
-      i18n.t('skip') || '건너뛰기',
-      0x222232,
-      () => this.closeEvent({}),
-      Math.round(W * 0.22), 44,
-    );
-
-    if (drawn.length === 0) {
-      const noEquip = this.makeBody(i18n.t('noNewEquip'), H * 0.02);
-      this.root.add([title, slotLbl, divider, noEquip, skipBtn]);
-      return;
-    }
-
-    this.root.add([title, slotLbl, hintTxt, divider, ...iconCards, skipBtn]);
+    _createTreasureEvent(this, this.root, this.data_, this.W, this.H);
   }
 
 
@@ -1330,7 +1020,7 @@ export default class NodeEventScene extends Phaser.Scene {
    * ─ 2행 레이아웃 제거 이유 ─
    * 2행 시 카드가 마스크 밖으로 넘어가 잘리는 문제 → 1행 가로 스크롤로 통일.
    */
-  private createScrollableCardGrid(
+  public createScrollableCardGrid(
     list: { cardId: number; count: number; mult?: number }[],
     multGain: number,
     onClick: (entry: any, data: CardData, curM: number, nextM: number) => void,
@@ -1503,314 +1193,7 @@ export default class NodeEventScene extends Phaser.Scene {
   private createIndianPokerEvent() {
     this.sound.stopAll();
     this.sound.play('bgm_event_poker', { loop: true, volume: AudioManager.bgmVol });
-
-    const H = this.H;
-    const W = this.W;
-    const { mapElement } = this.data_;
-    const TOTAL_ROUNDS   = 5;
-
-    let currentRound = 1;
-    let foldTokens   = 1;
-    let betAttempts  = 1;
-    let winStreak    = 0;
-    let gameEnded    = false;
-    let locked       = false; // 카드 공개 애니 중 버튼 잠금
-
-    const gen = () => ({
-      playerStars: Math.floor(Math.random() * 5) + 1,
-      aiStars:     Math.floor(Math.random() * 5) + 1,
-    });
-    let cards = gen();
-
-    // ── 고정 UI ──────────────────────────────────────────────────────────────
-    const title = this.makeHeader('row1_4', i18n.f('indianPokerTitle', { elem: this.elementName(mapElement) }), -H * 0.38);
-    const divider = this.makeDivider(-H * 0.30);
-
-    const roundLabel = this.add.text(0, -H * 0.25, `${i18n.t('round')}  ${currentRound} / ${TOTAL_ROUNDS}`, {
-      fontFamily: FONT_B, fontSize: '22px', color: '#cccccc',
-    }).setOrigin(0.5);
-
-    const tokenLabel = this.add.text(-W * 0.15, -H * 0.19, `${i18n.t('foldToken')}: ${foldTokens}`, {
-      fontFamily: FONT_M, fontSize: '16px', color: '#aaaaaa',
-    }).setOrigin(0.5);
-
-    const attemptLabel = this.add.text(W * 0.15, -H * 0.19, `${i18n.t('remainChance')}: ${betAttempts}`, {
-      fontFamily: FONT_M, fontSize: '16px', color: '#aaaaaa',
-    }).setOrigin(0.5);
-
-    // 카드 영역
-    const CARD_W = Math.round(W * 0.09);
-    const CARD_H = Math.round(H * 0.24);
-    const cardY  = -H * 0.04;
-
-    const aiCardG = this.add.graphics();
-    aiCardG.fillStyle(0x2a1a4a, 1); aiCardG.lineStyle(2, 0x9966cc, 1);
-    aiCardG.fillRoundedRect(-CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H, 10);
-    aiCardG.strokeRoundedRect(-CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H, 10);
-    aiCardG.setPosition(-W * 0.12, cardY);
-
-    const aiStarTxt = this.add.text(-W * 0.12, cardY, `★ ${cards.aiStars}`, {
-      fontFamily: FONT_B, fontSize: '28px', color: '#f5cc4a',
-    }).setOrigin(0.5);
-    const aiLbl = this.add.text(-W * 0.12, cardY + CARD_H * 0.6, i18n.t('opponent'), {
-      fontFamily: FONT_L, fontSize: '14px', color: '#aaaaaa',
-    }).setOrigin(0.5);
-
-    const myCardG = this.add.graphics();
-    myCardG.fillStyle(0x1a2a4a, 1); myCardG.lineStyle(2, 0x6699cc, 1);
-    myCardG.fillRoundedRect(-CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H, 10);
-    myCardG.strokeRoundedRect(-CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H, 10);
-    myCardG.setPosition(W * 0.12, cardY);
-
-    const myCardTxt = this.add.text(W * 0.12, cardY, '?', {
-      fontFamily: FONT_B, fontSize: '36px', color: '#6699cc',
-    }).setOrigin(0.5);
-    const myLbl = this.add.text(W * 0.12, cardY + CARD_H * 0.6, i18n.t('myCardHidden'), {
-      fontFamily: FONT_L, fontSize: '14px', color: '#aaaaaa',
-    }).setOrigin(0.5);
-
-    const statusTxt = this.add.text(0, H * 0.17, i18n.t('betOrFold'), {
-      fontFamily: FONT_M, fontSize: '17px', color: '#cccccc',
-    }).setOrigin(0.5);
-
-    const winLbl = this.add.text(0, H * 0.24, `${i18n.t('obtainableCard')}: ${i18n.t('none')}`, {
-      fontFamily: FONT_M, fontSize: '16px', color: '#f5cc4a',
-    }).setOrigin(0.5);
-
-    // ── 라운드 갱신 ──────────────────────────────────────────────────────────
-    const refresh = () => {
-      roundLabel.setText(`${i18n.t('round')}  ${currentRound} / ${TOTAL_ROUNDS}`);
-      tokenLabel.setText(`${i18n.t('foldToken')}: ${foldTokens}`);
-      attemptLabel.setText(`${i18n.t('remainChance')}: ${betAttempts}`);
-      aiStarTxt.setText(`★ ${cards.aiStars}`);
-      winLbl.setText(`${i18n.t('obtainableCard')}: ${winStreak > 0 ? `★ ${winStreak}` : i18n.t('none')}`);
-    };
-
-    const BW  = Math.round(W * 0.20); // 버튼 너비
-    const BG  = Math.round(W * 0.03); // 버튼 간격
-    const BY  = H * 0.36;
-
-    // 2개 버튼 중앙 정렬 (배팅/확인 단계 공통)
-    const B2_LEFT  = -(BW / 2 + BG / 2);
-    const B2_RIGHT =  (BW / 2 + BG / 2);
-
-    // ── 받기 / 계속 버튼 (승리 후 확인 단계) ────────────────────────────────
-    const takeNowBtn = this.makeButton(B2_LEFT, BY, i18n.t('receive'), 0x1a5c1a, () => {
-      gameEnded = true;
-      this.tweens.add({
-        targets: this.root, alpha: 0, duration: 180,
-        onComplete: () => {
-          this.root.removeAll(true);
-          this.root.setAlpha(1);
-          const resTitle = this.makeHeader('row1_4', '포커 보상 획득', -H * 0.15);
-          const resMsg = this.add.text(0, 0, `포커 게임을 종료하고\n장비 카드 ${winStreak}장을 획득합니다.`, {
-            fontFamily: FONT_M, fontSize: '20px', color: '#f5cc4a', align: 'center'
-          }).setOrigin(0.5);
-          const confirmBtn = this.makeButton(0, H * 0.22, i18n.t('confirm') || '확인', 0x27ae60, () => {
-            this.closeEvent({ pokerCard: winStreak });
-          }, 140, 50);
-          this.root.add([resTitle, resMsg, confirmBtn]);
-        }
-      });
-    }, BW, 52).setVisible(false) as Phaser.GameObjects.Container;
-
-    const continueBtn = this.makeButton(B2_RIGHT, BY, i18n.t('continueBtn'), 0x1a3a6c, () => {
-      takeNowBtn.setVisible(false);
-      continueBtn.setVisible(false);
-      myCardTxt.setText('?').setColor('#6699cc'); myLbl.setText(i18n.t('myCardHidden'));
-      locked = false; betBtn.setAlpha(1).setVisible(true); foldBtn.setAlpha(1).setVisible(true);
-      statusTxt.setText(i18n.t('betOrFold')).setColor('#cccccc');
-      refresh();
-    }, BW, 52).setVisible(false) as Phaser.GameObjects.Container;
-
-    const promptTake = (onContinue: () => void) => {
-      if (winStreak === 0 || currentRound > TOTAL_ROUNDS) { onContinue(); return; }
-      statusTxt.setText(i18n.f('pokerTakeConfirm', { n: winStreak })).setColor('#f5cc4a');
-      betBtn.setVisible(false);
-      foldBtn.setVisible(false);
-      takeNowBtn.setVisible(true);
-      continueBtn.setVisible(true);
-    };
-
-    // ── 카드 공개 후 결과 처리 (배팅 시 호출) ────────────────────────────────
-    const revealAndResolve = () => {
-      locked = true;
-      betBtn.setAlpha(0.4); foldBtn.setAlpha(0.4);
-
-      // 1단계: 내 카드 공개 (플래시 + 별 표시)
-      myCardTxt.setText(`★ ${cards.playerStars}`).setColor('#f5cc4a');
-      myLbl.setText(i18n.t('myCardRevealed'));
-      this.tweens.add({ targets: myCardTxt, scaleX: 1.3, scaleY: 1.3, duration: 180, yoyo: true, ease: 'Power2' });
-      statusTxt.setText(i18n.t('cardReveal')).setColor('#cccccc');
-
-      // 2단계: 잠시 후 결과 표시
-      this.time.delayedCall(700, () => {
-        const res = cards.playerStars > cards.aiStars ? 'win'
-                  : cards.playerStars < cards.aiStars ? 'lose' : 'draw';
-
-        if (res === 'win') {
-          winStreak++;
-          currentRound++;
-          foldTokens = 1; betAttempts = 1;
-          statusTxt.setText(i18n.f('pokerWin', { n: winStreak })).setColor('#2ecc71');
-          refresh();
-
-          if (currentRound > TOTAL_ROUNDS) {
-            gameEnded = true;
-            statusTxt.setText(i18n.f('pokerSweep', { n: winStreak })).setColor('#f5cc4a');
-            betBtn.setVisible(false); foldBtn.setVisible(false);
-            
-            this.time.delayedCall(1400, () => {
-              this.tweens.add({
-                targets: this.root, alpha: 0, duration: 180,
-                onComplete: () => {
-                  this.root.removeAll(true);
-                  this.root.setAlpha(1);
-                  const resTitle = this.makeHeader('row1_4', '포커 올킬!', -H * 0.15);
-                  const resMsg = this.add.text(0, 0, `모든 라운드에서 승인하여\n최종 보상 (${winStreak}장)을 획득하셨습니다!`, {
-                    fontFamily: FONT_B, fontSize: '22px', color: '#2ecc71', align: 'center'
-                  }).setOrigin(0.5);
-                  const confirmBtn = this.makeButton(0, H * 0.22, i18n.t('confirm') || '확인', 0x27ae60, () => {
-                    this.closeEvent({ pokerCard: winStreak });
-                  }, 140, 50);
-                  this.root.add([resTitle, resMsg, confirmBtn]);
-                }
-              });
-            });
-            return;
-          }
-
-          // 3단계: 다음 라운드로 넘어가기 전 대기
-          this.time.delayedCall(1400, () => {
-            cards = gen();
-            myCardTxt.setText('?').setColor('#6699cc');
-            myLbl.setText(i18n.t('myCardHidden'));
-            aiStarTxt.setText(`★ ${cards.aiStars}`);
-            locked = false; betBtn.setAlpha(1); foldBtn.setAlpha(1);
-            promptTake(() => {
-              statusTxt.setText(i18n.t('betOrFold')).setColor('#cccccc');
-              betBtn.setVisible(true); foldBtn.setVisible(true);
-              refresh();
-            });
-          });
-
-        } else if (res === 'draw') {
-          statusTxt.setText(i18n.t('pokerDraw')).setColor('#ffdb58');
-          this.time.delayedCall(1200, () => {
-            cards = gen();
-            myCardTxt.setText('?').setColor('#6699cc');
-            myLbl.setText(i18n.t('myCardHidden'));
-            aiStarTxt.setText(`★ ${cards.aiStars}`);
-            locked = false; betBtn.setAlpha(1); foldBtn.setAlpha(1);
-            statusTxt.setText(i18n.t('betOrFold')).setColor('#cccccc');
-          });
-
-        } else {
-          betAttempts--;
-          statusTxt.setText(i18n.f('pokerLose', { n: betAttempts })).setColor('#e74c3c');
-          attemptLabel.setText(`${i18n.t('remainChance')}: ${betAttempts}`);
-
-          if (betAttempts <= 0) {
-            gameEnded = true;
-            betBtn.setVisible(false); foldBtn.setVisible(false);
-            statusTxt.setText(i18n.t('pokerExhausted')).setColor('#e74c3c');
-
-            this.time.delayedCall(1400, () => {
-              this.tweens.add({
-                targets: this.root, alpha: 0, duration: 180,
-                onComplete: () => {
-                  this.root.removeAll(true);
-                  this.root.setAlpha(1);
-                  const resTitle = this.makeHeader('row1_4', '도전 실패', -H * 0.15);
-                  const resMsg = this.add.text(0, 0, '모든 배팅 횟수를 소진하였습니다.\n보상을 획득하지 못했습니다.', {
-                    fontFamily: FONT_M, fontSize: '18px', color: '#e74c3c', align: 'center'
-                  }).setOrigin(0.5);
-                  const confirmBtn = this.makeButton(0, H * 0.22, i18n.t('confirm') || '확인', 0x3a1a1a, () => {
-                    this.closeEvent({ pokerCard: 0 });
-                  }, 140, 50);
-                  this.root.add([resTitle, resMsg, confirmBtn]);
-                }
-              });
-            });
-          } else {
-            this.time.delayedCall(1200, () => {
-              cards = gen();
-              myCardTxt.setText('?').setColor('#6699cc');
-              myLbl.setText(i18n.t('myCardHidden'));
-              aiStarTxt.setText(`★ ${cards.aiStars}`);
-              locked = false; betBtn.setAlpha(1); foldBtn.setAlpha(1);
-              statusTxt.setText(i18n.t('betOrFold')).setColor('#cccccc');
-            });
-          }
-        }
-      });
-    };
-
-    // ── 배팅 버튼 ─────────────────────────────────────────────────────────────
-    const betBtn = this.makeButton(B2_LEFT, BY, i18n.t('bet'), 0x1a5c1a, () => {
-      if (gameEnded || locked) return;
-      revealAndResolve();
-    }, BW, 52);
-
-    // ── 배팅 포기 버튼 ────────────────────────────────────────────────────────
-    const foldBtn = this.makeButton(B2_RIGHT, BY, i18n.t('pokerFold'), 0x5c3a1a, () => {
-      if (gameEnded || locked) return;
-      if (foldTokens <= 0) {
-        statusTxt.setText(i18n.t('noFoldToken')).setColor('#e74c3c');
-        return;
-      }
-      // 내 카드 공개 후 포기 처리
-      locked = true;
-      betBtn.setAlpha(0.4); foldBtn.setAlpha(0.4);
-      myCardTxt.setText(`★ ${cards.playerStars}`).setColor('#aaaaaa');
-      myLbl.setText(i18n.t('myCardRevealed'));
-      this.tweens.add({ targets: myCardTxt, scaleX: 1.2, scaleY: 1.2, duration: 150, yoyo: true });
-
-      // 5성 배팅포기 → 즉시 이벤트 종료 (0장, 규칙 위반 패널티)
-      if (cards.playerStars === 5) {
-        gameEnded = true;
-        statusTxt.setText('5성 카드를 손에 쥐고 포기...\n이벤트가 즉시 종료됩니다.').setColor('#e74c3c');
-        betBtn.setVisible(false); foldBtn.setVisible(false);
-        this.time.delayedCall(1400, () => {
-          this.tweens.add({
-            targets: this.root, alpha: 0, duration: 180,
-            onComplete: () => {
-              this.root.removeAll(true);
-              this.root.setAlpha(1);
-              const resTitle = this.makeHeader('row1_4', '포커 강제 종료', -H * 0.15);
-              const resMsg   = this.add.text(0, 0,
-                '5성 카드를 들고 배팅을 포기하면\n이벤트가 즉시 종료됩니다.\n보상을 받지 못합니다.', {
-                fontFamily: FONT_M, fontSize: '18px', color: '#e74c3c', align: 'center',
-              }).setOrigin(0.5);
-              const confirmBtn = this.makeButton(0, H * 0.22, i18n.t('confirm') || '확인', 0x3a1a1a, () => {
-                this.closeEvent({ pokerCard: 0 });
-              }, 140, 50);
-              this.root.add([resTitle, resMsg, confirmBtn]);
-            },
-          });
-        });
-        return;
-      }
-
-      foldTokens--;
-      statusTxt.setText(i18n.f('pokerFolded', { n: foldTokens })).setColor('#aaaaaa');
-      this.time.delayedCall(900, () => {
-        cards = gen();
-        myCardTxt.setText('?').setColor('#6699cc'); myLbl.setText(i18n.t('myCardHidden'));
-        aiStarTxt.setText(`★ ${cards.aiStars}`);
-        tokenLabel.setText(`${i18n.t('foldToken')}: ${foldTokens}`);
-        locked = false; betBtn.setAlpha(1); foldBtn.setAlpha(1);
-        statusTxt.setText(i18n.t('betOrFold')).setColor('#cccccc');
-      });
-    }, BW, 56);
-
-    this.root.add([
-      title, divider, roundLabel, tokenLabel, attemptLabel,
-      aiCardG, aiStarTxt, aiLbl,
-      myCardG, myCardTxt, myLbl,
-      statusTxt, winLbl,
-      betBtn, foldBtn, takeNowBtn, continueBtn,
-    ]);
+    _createIndianPokerEvent(this, this.root, this.data_, this.W, this.H);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1820,104 +1203,7 @@ export default class NodeEventScene extends Phaser.Scene {
   private createDeckPurificationEvent() {
     this.sound.stopAll();
     this.sound.play('bgm_event_poker', { loop: true, volume: AudioManager.bgmVol });
-
-    const H = this.H, W = this.W;
-    const ELEM_OFFSET: Record<string, number> = { water:0, fire:5, grass:10, lightning:15, earth:20 };
-
-    const title   = this.makeHeader('row1_4', '덱 정화', -H * 0.38);
-    const divider = this.makeDivider(-H * 0.30, W * 0.7);
-    const desc    = this.add.text(0, -H * 0.23, '제거할 카드 1장을 선택하세요.\n카드를 제거하면 덱이 강해집니다.', {
-      fontFamily: FONT_M, fontSize: '17px', color: '#cccccc', align: 'center', lineSpacing: 4,
-    }).setOrigin(0.5);
-    this.root.add([title, divider, desc]);
-
-    const allCards = this.data_.deck;
-    if (allCards.length === 0) {
-      this.root.add([
-        this.makeBody('제거할 카드가 없습니다.', H * 0.02),
-        this.makeButton(0, H * 0.22, '확인', 0x333333, () => this.closeEvent({}), Math.round(W * 0.22), 50),
-      ]);
-      return;
-    }
-
-    // Step 1: 제거할 카드 선택
-    this.createScrollableCardGrid(allCards, 1.0, (entry, cardData) => {
-      const removedCardId = entry.cardId;
-
-      this.tweens.add({ targets: this.root, alpha: 0, duration: 180, onComplete: () => {
-        this.root.removeAll(true);
-        this.root.setAlpha(1);
-
-        // Step 2: 보너스 강화 카드 선택 (5성 미만 속성 카드, 제거된 카드 제외)
-        const upgradeable = allCards.filter(e => {
-          if (e.cardId === removedCardId) return false;
-          const cd = CARD_DATA_LIST.find(c => c.id === e.cardId);
-          return cd && cd.element !== 'normal' && cd.stars < 5 && cd.element in ELEM_OFFSET;
-        });
-
-        this.root.add([
-          this.makeHeader('row1_4', '보너스: 카드 강화', -H * 0.38),
-          this.makeDivider(-H * 0.30, W * 0.7),
-          this.add.text(0, -H * 0.23,
-            `[${i18n.t(cardData.nameKey)}] 제거 완료!\n강화할 카드를 선택하거나 건너뛰세요.`, {
-            fontFamily: FONT_M, fontSize: '16px', color: '#f5cc4a', align: 'center', lineSpacing: 4,
-          }).setOrigin(0.5),
-        ]);
-
-        const skipBtn = this.makeButton(0, H * 0.36, '건너뛰기', 0x333333, () => {
-          this.closeEvent({ removeCardId: removedCardId });
-        }, Math.round(W * 0.24), 46);
-        this.root.add(skipBtn);
-
-        if (upgradeable.length === 0) {
-          const noneTxt = this.add.text(0, H * 0.04, '강화할 수 있는 카드가 없습니다.', {
-            fontFamily: FONT_M, fontSize: '16px', color: '#aaaaaa',
-          }).setOrigin(0.5);
-          this.root.add(noneTxt);
-          return;
-        }
-
-        this.createScrollableCardGrid(upgradeable, 1.0, (upgradeEntry, upgradeCard) => {
-          // Step 3: 결과 화면
-          this.tweens.add({ targets: this.root, alpha: 0, duration: 180, onComplete: () => {
-            this.root.removeAll(true);
-            this.root.setAlpha(1);
-
-            const off = ELEM_OFFSET[upgradeCard.element];
-            const upgradedCard = off != null ? CARD_DATA_LIST[off + upgradeCard.stars] : null;
-
-            const group: Phaser.GameObjects.GameObject[] = [
-              this.makeHeader('row1_4', '덱 정화 완료!', -H * 0.32),
-            ];
-
-            if (upgradedCard) {
-              const SC = 0.82, sw = CARD_WIDTH * SC;
-              group.push(
-                this.add.text(-sw * 1.2, -H * 0.17, '제거', {
-                  fontFamily: FONT_M, fontSize: '13px', color: '#e74c3c',
-                }).setOrigin(0.5),
-                this.add.text(sw * 0.8, -H * 0.17, '강화', {
-                  fontFamily: FONT_M, fontSize: '13px', color: '#2ecc71',
-                }).setOrigin(0.5),
-                new Card(this, -sw * 1.2 - sw / 2, -H * 0.12 - (CARD_HEIGHT * SC) / 2, cardData).setScale(SC),
-                this.add.text(0, -H * 0.08, '▶', { fontFamily: FONT_B, fontSize: '36px', color: '#fff' }).setOrigin(0.5),
-                new Card(this, sw * 0.8 - sw / 2, -H * 0.12 - (CARD_HEIGHT * SC) / 2, upgradedCard).setScale(SC),
-              );
-            }
-
-            group.push(
-              this.add.text(0, H * 0.22, '카드 제거 + 강화 완료!', {
-                fontFamily: FONT_B, fontSize: '20px', color: '#2ecc71',
-              }).setOrigin(0.5),
-              this.makeButton(0, H * 0.35, '확인', 0x27ae60, () => {
-                this.closeEvent({ removeCardId: removedCardId, upgradeStarCardId: upgradeEntry.cardId });
-              }, Math.round(W * 0.28), 56),
-            );
-            this.root.add(group);
-          }});
-        }, '#2ecc71');
-      }});
-    }, '#e74c3c');
+    _createDeckPurificationEvent(this, this.root, this.data_, this.W, this.H);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

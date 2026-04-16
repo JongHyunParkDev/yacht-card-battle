@@ -1,0 +1,271 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1776317660286,
+  "projectRoot": "c:\\my\\ycb",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "tsconfig.json"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "vite",
+        "version": "5.2.0",
+        "category": "build"
+      }
+    ],
+    "packageManager": "npm",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "npm run build",
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": "npm run dev",
+    "scripts": {
+      "dev": "concurrently \"npm run dev:web\" \"npm run dev:electron\"",
+      "dev:web": "vite",
+      "dev:electron": "wait-on http://localhost:5173 && npx electron .",
+      "build": "vite build && npm run capacitor:copy",
+      "preview": "vite preview",
+      "electron:build": "npm run build && electron-builder",
+      "capacitor:init": "cap init CB-Tower com.example.CB-Tower --web-dir dist",
+      "capacitor:add:android": "cap add android",
+      "capacitor:add:ios": "cap add ios",
+      "capacitor:copy": "cap copy",
+      "capacitor:open:android": "cap open android"
+    }
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": "ES modules",
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "docs",
+      "src"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "dist": {
+      "path": "dist",
+      "purpose": "Distribution/build output",
+      "fileCount": 1,
+      "lastAccessed": 1776317660007,
+      "keyFiles": [
+        "index.html"
+      ]
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 4,
+      "lastAccessed": 1776317660076,
+      "keyFiles": [
+        "audio_generation_prompts.md",
+        "evaluation.md",
+        "game_design_analysis.md",
+        "strategy_architecture.md"
+      ]
+    },
+    "electron": {
+      "path": "electron",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1776317660078,
+      "keyFiles": [
+        "main.js",
+        "preload.js"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 1,
+      "lastAccessed": 1776317660081,
+      "keyFiles": [
+        "main.ts"
+      ]
+    },
+    "dist\\assets": {
+      "path": "dist\\assets",
+      "purpose": "Static assets",
+      "fileCount": 28,
+      "lastAccessed": 1776317660082,
+      "keyFiles": [
+        "attr-sprite-BLn2VF9D.png",
+        "background_1-BKKYJhZu.png",
+        "background_2-Dy0qgGJ2.png"
+      ]
+    },
+    "src\\assets": {
+      "path": "src\\assets",
+      "purpose": "Static assets",
+      "fileCount": 0,
+      "lastAccessed": 1776317660087,
+      "keyFiles": []
+    },
+    "src\\data": {
+      "path": "src\\data",
+      "purpose": "Data files",
+      "fileCount": 5,
+      "lastAccessed": 1776317660089,
+      "keyFiles": [
+        "cardData.ts",
+        "enemyData.ts",
+        "equipmentData.ts"
+      ]
+    },
+    "src\\utils": {
+      "path": "src\\utils",
+      "purpose": "Utility functions",
+      "fileCount": 3,
+      "lastAccessed": 1776317660091,
+      "keyFiles": [
+        "Audio.ts",
+        "localization.ts",
+        "sceneUtils.ts"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "src\\scenes\\NodeEventScene.ts",
+      "accessCount": 38,
+      "lastAccessed": 1776320397966,
+      "type": "file"
+    },
+    {
+      "path": "src\\scenes\\BattleScene.ts",
+      "accessCount": 25,
+      "lastAccessed": 1776320517279,
+      "type": "file"
+    },
+    {
+      "path": "docs\\GAME_DESIGN.md",
+      "accessCount": 14,
+      "lastAccessed": 1776319439281,
+      "type": "file"
+    },
+    {
+      "path": "src",
+      "accessCount": 9,
+      "lastAccessed": 1776319155985,
+      "type": "directory"
+    },
+    {
+      "path": "CLAUDE.md",
+      "accessCount": 5,
+      "lastAccessed": 1776319191405,
+      "type": "file"
+    },
+    {
+      "path": "",
+      "accessCount": 4,
+      "lastAccessed": 1776318359154,
+      "type": "directory"
+    },
+    {
+      "path": "docs\\CARD_VALUE_RULES.md",
+      "accessCount": 1,
+      "lastAccessed": 1776318166640,
+      "type": "file"
+    },
+    {
+      "path": "docs\\evaluation.md",
+      "accessCount": 1,
+      "lastAccessed": 1776318166803,
+      "type": "file"
+    },
+    {
+      "path": "docs\\game_design_analysis.md",
+      "accessCount": 1,
+      "lastAccessed": 1776318167410,
+      "type": "file"
+    },
+    {
+      "path": "docs\\strategy_architecture.md",
+      "accessCount": 1,
+      "lastAccessed": 1776318167612,
+      "type": "file"
+    },
+    {
+      "path": ".claude\\skills\\ycb-checklist\\SKILL.md",
+      "accessCount": 1,
+      "lastAccessed": 1776318536471,
+      "type": "file"
+    },
+    {
+      "path": "src\\scenes\\MainScene.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776318747742,
+      "type": "file"
+    },
+    {
+      "path": "src\\scenes\\CharacterSelectScene.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776318748038,
+      "type": "file"
+    },
+    {
+      "path": "src\\data\\cardData.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776319395330,
+      "type": "file"
+    },
+    {
+      "path": "src\\battle\\BattleCalc.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776319884521,
+      "type": "file"
+    },
+    {
+      "path": "src\\battle\\BattleFX.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776319936570,
+      "type": "file"
+    },
+    {
+      "path": "src\\events\\NodeEventUI.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776319952462,
+      "type": "file"
+    },
+    {
+      "path": "src\\events\\TreasureEvent.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776320028706,
+      "type": "file"
+    },
+    {
+      "path": "src\\events\\IndianPokerEvent.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776320105001,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

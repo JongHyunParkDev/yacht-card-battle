@@ -7,6 +7,8 @@ import { WeaponType, CHAR_SPRITE_KEY, CHAR_FRAME_COUNT } from '@src/scenes/Chara
 import Card, { CARD_WIDTH, CARD_HEIGHT } from '@src/objects/Card';
 import type { CardEffect } from '@src/data/cardData';
 import { AudioManager } from '@src/utils/Audio';
+import { TYPE_BEATS } from '@src/battle/BattleCalc';
+import { playPlayerAttack as _playPlayerAttack, playEnemyHit as _playEnemyHit, playPlayerHit as _playPlayerHit, showFloatingDamage as _showFloatingDamage, showFloatingHeal as _showFloatingHeal, launchProjectile as _launchProjectile, playHitBurst as _playHitBurst } from '@src/battle/BattleFX';
 
 // ─── 인터페이스 ───────────────────────────────────────────────────────────────
 
@@ -43,14 +45,6 @@ const ELEM_COLORS: Record<string, number> = {
   normal:    0xcccccc,
 };
 
-// Water > Fire > Grass > Earth > Lightning > Water
-const TYPE_BEATS: Record<string, string> = {
-  water:     'fire',
-  fire:      'grass',
-  grass:     'earth',
-  earth:     'lightning',
-  lightning: 'water',
-};
 
 const HAND_SIZE   = 5;
 const MAX_TURNS   = 20;
@@ -1264,101 +1258,14 @@ export default class BattleScene extends Phaser.Scene {
   // 플레이어 공격 트위너 (속성별 다른 스타일 + 프로젝타일 발사)
   // ───────────────────────────────────────────────────────────────────────────
   private playPlayerAttack(elem: string, onComplete: () => void, isFastForward = false, stars = 0) {
-    const startX = this.playerSprite.x;
-    const dashX  = startX + this.W * 0.20; // 살짝 짧게 대시 (프로젝타일 공간 확보)
-
-    const easeMap: Record<string, string> = {
-      water:     'Sine.easeInOut',
-      fire:      'Expo.easeOut',
-      grass:     'Bounce.easeOut',
-      lightning: 'Power4.easeOut',
-      earth:     'Power2.easeIn',
-      normal:    'Power1.easeInOut',
-    };
-    const durMap: Record<string, number> = {
-      water: 200, fire: 130, grass: 250, lightning: 70, earth: 300, normal: 180,
-    };
-    const ease    = easeMap[elem]  ?? 'Power1.easeInOut';
-    let dashDur = durMap[elem]   ?? 180;
-    if (isFastForward) {
-      dashDur = Math.max(40, Math.floor(dashDur * 0.4));
-    }
-    const elemColor = ELEM_COLORS[elem] ?? 0xffffff;
-
-    // 공격 사운드 (속성별 오버레이 톤 포함)
-    AudioManager.playAttack(elem);
-
-    // 속성 색 tint
-    this.playerSprite.setTint(elemColor);
-
-    this.tweens.add({
-      targets:  this.playerSprite,
-      x:        dashX,
-      duration: dashDur,
-      ease,
-      onComplete: () => {
-        this.playerSprite.clearTint();
-
-        // 대시 정점에서 프로젝타일 발사
-        const launchX = this.playerSprite.x;
-        const launchY = this.playerSprite.y - 20;
-        this.launchProjectile(elem, launchX, launchY, isFastForward, () => {
-          onComplete(); // 프로젝타일이 적에 도달하면 데미지 콜백
-        }, stars);
-
-        // 플레이어는 프로젝타일과 동시에 복귀
-        this.tweens.add({
-          targets:  this.playerSprite,
-          x:        startX,
-          duration: dashDur + 80,
-          ease:     'Power2.easeOut',
-        });
-      },
-    });
-
-    // lightning 특수: 빠른 shake 추가
-    if (elem === 'lightning') {
-      this.tweens.add({
-        targets:   this.playerSprite,
-        angle:     { from: -8, to: 8 },
-        duration:  30,
-        repeat:    5,
-        yoyo:      true,
-        onComplete: () => this.playerSprite.setAngle(0),
-      });
-    }
+    _playPlayerAttack({ scene: this, playerSprite: this.playerSprite, enemyContainer: this.enemyContainer, elem, W: this.W, onComplete, isFastForward, stars });
   }
 
   // ───────────────────────────────────────────────────────────────────────────
   // 적 피격 이펙트
   // ───────────────────────────────────────────────────────────────────────────
   private playEnemyHit(elem: string, isCrit: boolean = false) {
-    const elemColor = ELEM_COLORS[elem] ?? 0xff0000;
-    this.enemyIdleTween?.pause();
-
-    this.enemyBody.setFillStyle(elemColor, 0.6);
-
-    const origX = this.enemyContainer.x;
-    
-    // 크리티컬이면 화면 흔들림 효과
-    if (isCrit) {
-      this.cameras.main.shake(200, 0.01);
-      this.enemyContainer.setScale(1.1);
-    }
-    
-    this.tweens.add({
-      targets:  this.enemyContainer,
-      x:        { from: origX - (isCrit ? 18 : 12), to: origX + (isCrit ? 18 : 12) },
-      duration: isCrit ? 40 : 60,
-      repeat:   isCrit ? 5 : 3,
-      yoyo:     true,
-      onComplete: () => {
-        this.enemyContainer.x = origX;
-        this.enemyContainer.setScale(1.0);
-        this.enemyBody.setFillStyle(ELEM_COLORS[this.data_.mapElement] ?? 0xff6666, 0.15);
-        this.enemyIdleTween?.resume();
-      },
-    });
+    _playEnemyHit({ scene: this, enemyContainer: this.enemyContainer, enemyBody: this.enemyBody, enemyIdleTween: this.enemyIdleTween, elem, isCrit, mapElement: this.data_.mapElement });
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -1487,63 +1394,14 @@ export default class BattleScene extends Phaser.Scene {
   // 플레이어 피격
   // ───────────────────────────────────────────────────────────────────────────
   private playPlayerHit() {
-    AudioManager.play('HIT');
-    this.playerSprite.setTint(0xff0000);
-    this.cameras.main.shake(200, 0.015); // 화면 흔들림
-
-    const origX = this.playerSprite.x;
-    this.tweens.add({
-      targets:  this.playerSprite,
-      x:        { from: origX - 15, to: origX + 15 },
-      duration: 50,
-      repeat:   4,
-      yoyo:     true,
-      onComplete: () => {
-        this.playerSprite.x = origX;
-        this.playerSprite.clearTint();
-      },
-    });
+    _playPlayerHit({ scene: this, playerSprite: this.playerSprite });
   }
 
   // ───────────────────────────────────────────────────────────────────────────
   // 데미지 플로팅 텍스트 이펙트
   // ───────────────────────────────────────────────────────────────────────────
   private showFloatingDamage(x: number, y: number, amount: number, isCrit: boolean, color: string) {
-    if (amount <= 0 && color !== '#e74c3c') return;
-
-    // 크리티컬 데미지는 전용 색상 (주황-황금 그라데이션 느낌)
-    const displayColor = isCrit ? '#ff9900' : color;
-
-    const txt = this.add.text(x, y, `-${Math.floor(amount)}`, {
-      fontFamily: FONT_B,
-      fontSize: isCrit ? '58px' : '40px',
-      color: displayColor,
-      stroke: isCrit ? '#7a3300' : '#000000',
-      strokeThickness: isCrit ? 9 : 6,
-      fontStyle: isCrit ? 'italic' : 'normal'
-    }).setOrigin(0.5);
-
-    // 크리 텍스트
-    if (isCrit) {
-      const critObj = this.add.text(x, y - 45, '★ CRITICAL!', {
-        fontFamily: FONT_B, fontSize: '28px', color: '#ffe566', stroke: '#7a3300', strokeThickness: 4
-      }).setOrigin(0.5);
-      
-      this.tweens.add({
-        targets: critObj, y: y - 60, alpha: 0, duration: 800, ease: 'Power2.easeOut',
-        onComplete: () => critObj.destroy()
-      });
-    }
-
-    this.tweens.add({
-      targets: txt,
-      y: y - (isCrit ? 80 : 50),
-      alpha: 0,
-      scale: isCrit ? 1.5 : 1,
-      duration: isCrit ? 1400 : 1100, // 더 오래 표시되도록 증가
-      ease: 'Power2.easeOut',
-      onComplete: () => txt.destroy()
-    });
+    _showFloatingDamage({ scene: this, x, y, amount, isCrit, color });
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -2017,15 +1875,7 @@ export default class BattleScene extends Phaser.Scene {
   // 회복 플로팅 텍스트
   // ───────────────────────────────────────────────────────────────────────────
   private showFloatingHeal(x: number, y: number, amount: number) {
-    if (amount <= 0) return;
-    const txt = this.add.text(x, y, `+${Math.floor(amount)} HP`, {
-      fontFamily: FONT_B, fontSize: '24px', color: '#00e676',
-      stroke: '#005020', strokeThickness: 3,
-    }).setOrigin(0.5);
-    this.tweens.add({
-      targets: txt, y: y - 45, alpha: 0, duration: 1000, ease: 'Power2.easeOut',
-      onComplete: () => txt.destroy(),
-    });
+    _showFloatingHeal({ scene: this, x, y, amount });
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -2105,185 +1955,13 @@ export default class BattleScene extends Phaser.Scene {
   // 속성별 프로젝타일 애니메이션
   // ───────────────────────────────────────────────────────────────────────────
   private launchProjectile(elem: string, fromX: number, fromY: number, fast: boolean, onHit: () => void, stars = 0) {
-    const toX = this.enemyContainer.x;
-    const toY = this.enemyContainer.y - 10;
-    const travelDur = fast ? 130 : 260;
-
-    // 별 등급에 따른 스케일 (1성: 1.0, 2성: 1.18, 3성: 1.36, 4성: 1.54, 5성: 1.72)
-    const scaleFactor = stars > 0 ? 1 + (stars - 1) * 0.18 : 1.0;
-
-    // 속성별 프로젝타일 그래픽 생성
-    const proj = this.add.graphics();
-    proj.setDepth(10);
-    proj.setScale(scaleFactor);
-
-    switch (elem) {
-      case 'fire': {
-        proj.fillStyle(0xff4500, 1);
-        proj.fillCircle(0, 0, 13);
-        proj.fillStyle(0xff8800, 0.7);
-        proj.fillCircle(-2, -2, 7);
-        proj.fillStyle(0xffdd00, 0.5);
-        proj.fillCircle(-3, -3, 3);
-        break;
-      }
-      case 'water': {
-        proj.fillStyle(0x2288ff, 0.85);
-        proj.fillCircle(0, 0, 11);
-        proj.fillStyle(0xaaddff, 0.6);
-        proj.fillCircle(-3, -3, 5);
-        proj.lineStyle(2, 0x55aaff, 0.9);
-        proj.strokeCircle(0, 0, 13);
-        break;
-      }
-      case 'lightning': {
-        // 번개 볼트 형태
-        proj.fillStyle(0xffee00, 1);
-        proj.fillTriangle(-6, -16, 4, 0, -2, 0);
-        proj.fillTriangle(-2, 0, 8, 0, 2, 16);
-        proj.fillStyle(0xffffff, 0.6);
-        proj.fillCircle(0, 0, 5);
-        break;
-      }
-      case 'grass': {
-        proj.fillStyle(0x22cc55, 0.9);
-        proj.fillEllipse(0, 0, 14, 22);
-        proj.fillStyle(0x55ff88, 0.5);
-        proj.fillEllipse(-2, -3, 7, 11);
-        proj.lineStyle(1.5, 0x008833, 0.8);
-        proj.strokeEllipse(0, 0, 14, 22);
-        break;
-      }
-      case 'earth': {
-        proj.fillStyle(0x8B5E2A, 1);
-        proj.fillCircle(0, 0, 13);
-        proj.fillStyle(0xAA8044, 0.6);
-        proj.fillCircle(-3, -4, 7);
-        proj.fillStyle(0x664422, 0.5);
-        proj.fillCircle(3, 3, 5);
-        break;
-      }
-      default: { // normal
-        proj.fillStyle(0xffffff, 0.85);
-        proj.fillRect(-3, -16, 6, 32);
-        proj.fillStyle(0xd4af37, 0.7);
-        proj.fillRect(-1, -12, 2, 24);
-        break;
-      }
-    }
-
-    proj.setPosition(fromX, fromY);
-
-    // 이동 트윈
-    const startAngle = Phaser.Math.Angle.Between(fromX, fromY, toX, toY) * (180 / Math.PI);
-    if (['earth', 'grass'].includes(elem)) proj.setAngle(startAngle);
-
-    // 번개: 지그재그 경로
-    if (elem === 'lightning') {
-      const steps = fast ? 3 : 5;
-      const stepDur = travelDur / steps;
-      let s = 0;
-      const doStep = () => {
-        if (s >= steps) { this.playHitBurst(toX, toY, elem); proj.destroy(); onHit(); return; }
-        const t = (s + 1) / steps;
-        const mx = fromX + (toX - fromX) * t + (s % 2 === 0 ? 20 : -20);
-        const my = fromY + (toY - fromY) * t + (Math.random() - 0.5) * 30;
-        this.tweens.add({
-          targets: proj, x: mx, y: my, duration: stepDur,
-          ease: 'Linear', onComplete: () => { s++; doStep(); }
-        });
-      };
-      doStep();
-    } else {
-      // 일반 포물선 이동
-      const midY = Math.min(fromY, toY) - 40;
-      this.tweens.add({
-        targets: proj, x: toX,
-        duration: travelDur,
-        ease: 'Power1.easeIn',
-        onUpdate: (tween) => {
-          const p = tween.progress;
-          proj.y = fromY + (toY - fromY) * p - Math.sin(p * Math.PI) * 40;
-          if (['earth', 'grass'].includes(elem)) proj.angle += fast ? 8 : 5;
-        },
-        onComplete: () => {
-          this.playHitBurst(toX, toY, elem);
-          proj.destroy();
-          onHit();
-        }
-      });
-    }
-
-    // 불 카드: 파티클 흔적
-    if (elem === 'fire') {
-      const trailCount = fast ? 3 : 6;
-      for (let i = 0; i < trailCount; i++) {
-        this.time.delayedCall(i * (travelDur / trailCount * 0.6), () => {
-          if (!proj.active) return;
-          const trail = this.add.graphics();
-          trail.fillStyle(0xff6600, 0.5 - i * 0.06);
-          trail.fillCircle(0, 0, 8 - i);
-          trail.setPosition(proj.x, proj.y).setDepth(9);
-          this.tweens.add({
-            targets: trail, alpha: 0, scale: 0.3, duration: 250,
-            onComplete: () => trail.destroy(),
-          });
-        });
-      }
-    }
+    _launchProjectile({ scene: this, elem, fromX, fromY, toX: this.enemyContainer.x, toY: this.enemyContainer.y - 10, fast, stars, onHit });
   }
 
   // ───────────────────────────────────────────────────────────────────────────
   // 프로젝타일 착탄 이펙트
   // ───────────────────────────────────────────────────────────────────────────
   private playHitBurst(x: number, y: number, elem: string) {
-    const color = ELEM_COLORS[elem] ?? 0xffffff;
-    const burstCount = 8;
-
-    // 방사형 폭발 선
-    for (let i = 0; i < burstCount; i++) {
-      const angle = (i / burstCount) * Math.PI * 2;
-      const line = this.add.graphics();
-      line.lineStyle(2.5, color, 1);
-      const len = elem === 'lightning' ? 30 : 22;
-      line.lineBetween(0, 0, Math.cos(angle) * len, Math.sin(angle) * len);
-      line.setPosition(x, y).setDepth(11);
-      this.tweens.add({
-        targets: line, scaleX: 1.8, scaleY: 1.8, alpha: 0,
-        duration: elem === 'lightning' ? 250 : 350,
-        ease: 'Power2.easeOut',
-        onComplete: () => line.destroy(),
-      });
-    }
-
-    // 중앙 플래시
-    const flash = this.add.graphics();
-    flash.fillStyle(color, 0.85);
-    flash.fillCircle(0, 0, elem === 'fire' ? 30 : 22);
-    flash.setPosition(x, y).setDepth(11);
-    this.tweens.add({
-      targets: flash, alpha: 0, scale: 2.2,
-      duration: elem === 'lightning' ? 200 : 400,
-      ease: 'Power3.easeOut',
-      onComplete: () => flash.destroy(),
-    });
-
-    // 번개: 화면 순간 밝아짐
-    if (elem === 'lightning') {
-      const whiteFlash = this.add.graphics();
-      whiteFlash.fillStyle(0xffffff, 0.2);
-      whiteFlash.fillRect(0, 0, this.W, this.H);
-      whiteFlash.setDepth(50);
-      this.tweens.add({
-        targets: whiteFlash, alpha: 0, duration: 120,
-        onComplete: () => whiteFlash.destroy(),
-      });
-      this.cameras.main.shake(120, 0.012);
-    }
-
-    // 불: 히트 스탑 (80ms 게임 정지 느낌)
-    if (elem === 'fire') {
-      this.cameras.main.shake(80, 0.008);
-    }
+    _playHitBurst({ scene: this, x, y, elem, W: this.W, H: this.H });
   }
 }

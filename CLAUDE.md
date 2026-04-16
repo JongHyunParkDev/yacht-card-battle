@@ -421,6 +421,21 @@ interface SaveState {
 
 ## 미구현 / TODO
 
-- **적 맵 진행 스케일링**: `completedElements.length`를 기반으로 맵 이동 시마다 적 스탯 강화
-- **전체 밸런스 조정**: 이벤트 보상 균형, 적 전투 특색 강화 (속성별 고유 패턴)
-- **Legacy 장비 선택**: CharacterSelectScene에서 `allEquipment` 목록을 `load-legacy`로 불러와 시작 장비 선택 UI 제공
+> **상세 체크리스트는 [`docs/GAME_DESIGN.md`](docs/GAME_DESIGN.md) 섹션 7에서 관리한다.**  
+> 아래는 요약만 기재. 신규 항목 추가 시 반드시 GAME_DESIGN.md에 먼저 등록할 것.
+
+### 🔴 즉시
+- **적 속성별 고유 행동 패턴**: `doEnemyTurn()`에 속성별 분기 (water: 방어력 누적, fire: 화상 부여, grass: 자기회복 등)
+- **HEART 이벤트 재조정**: 소 희생(-5HP, +5%)이 항상 이득인 구조 수정
+- **IntroScene 골드 소비처**: 골드는 IntroScene에서 패시브 강화 / 장비 슬롯 열기로 사용 (상인 노드 없음)
+
+### 🟡 단기
+- **적 맵 진행 스케일링**: `completedElements.length` 기반 적 스탯 강화
+- **전체 밸런스 조정**: Guardian 방어막 지속 수정, 이벤트 보상 균형
+- **Legacy 장비 선택**: CharacterSelectScene에서 `allEquipment` 불러와 시작 장비 선택 UI 제공
+- **시작 덱 커스터마이징**: 속성 선택 또는 카드 제거 옵션
+
+### 🟢 중기 이상
+- **메타 진행**: `runs` 기반 해금, 런 완주가 다음 런을 풍부하게
+- **원소 연쇄 반응**: 젖음·감전·수증기 등 복합 반응
+- **시각 연출**: 히트스탑, 카메라 쉐이크, 데미지 플로팅 개선
