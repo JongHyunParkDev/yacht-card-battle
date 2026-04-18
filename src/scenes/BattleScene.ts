@@ -106,6 +106,12 @@ export default class BattleScene extends Phaser.Scene {
   private enemyStunned       = false; // 기절: 다음 적 공격 스킵
   private enemyArmorBreak    = 0;  // 방깎: 적 방어력 감소량
 
+  // ── 적 속성별 패턴 상태 ───────────────────────────────────────────────────
+  private playerBurnValue  = 0;   // fire: 플레이어 화상 데미지/턴
+  private playerBurnDur    = 0;   // fire: 플레이어 화상 남은 턴
+  private enemyEarthShield = 0;   // earth: 매 턴 방어막 (플레이어 공격 흡수)
+  private enemyGrassHealCd = 0;   // grass: 자기회복 쿨다운 (0=발동 가능)
+
   // ── 적 행동 예고 UI ────────────────────────────────────────────────────────
   private enemyIntentCont: Phaser.GameObjects.Container | null = null;
   private enemyStatusCont: Phaser.GameObjects.Container | null = null;
@@ -172,6 +178,10 @@ export default class BattleScene extends Phaser.Scene {
     this.enemyVulnerableDur = 0;
     this.enemyStunned = false;
     this.enemyArmorBreak = 0;
+    this.playerBurnValue  = 0;
+    this.playerBurnDur    = 0;
+    this.enemyEarthShield = 0;
+    this.enemyGrassHealCd = 0;
     this.enemyIntentCont = null;
     this.enemyStatusCont = null;
     // 장비 패시브 초기화
@@ -1304,6 +1314,47 @@ export default class BattleScene extends Phaser.Scene {
       return;
     }
 
+    // ── 속성별 고유 행동 패턴 (일반/보스 적, FINAL_BOSS 제외) ─────────────────
+    if (!this.data_.isFinalBoss) {
+      const elem = this.data_.mapElement;
+
+      // Water: 짝수 턴마다 방어력 +5 누적
+      if (elem === 'water' && this.currentTurn % 2 === 0) {
+        this.enemyDef += 5;
+        this.statusText.setText(`💧 ${this.data_.mobName} 방어력 강화! DEF +5 (현재 ${this.enemyDef})`).setColor('#4db8ff');
+        this.cameras.main.shake(60, 0.003);
+      }
+
+      // Fire: 매 3턴마다 플레이어에게 화상 부여 (5 데미지 × 2턴)
+      if (elem === 'fire' && this.currentTurn % 3 === 0) {
+        this.playerBurnValue = 5;
+        this.playerBurnDur   = 2;
+        this.statusText.setText(`🔥 ${this.data_.mobName} 화염 공격! 화상 5×2턴 부여`).setColor('#ff6b35');
+        AudioManager.play('BURN_TICK');
+      }
+
+      // Grass: HP 50% 이하 시 자기회복 (최대HP의 15%), 4턴 쿨다운
+      if (elem === 'grass') {
+        if (this.enemyGrassHealCd > 0) this.enemyGrassHealCd--;
+        if (this.enemyCurrentHp <= this.enemyMaxHp * 0.5 && this.enemyGrassHealCd === 0) {
+          const healAmt = Math.round(this.enemyMaxHp * 0.15);
+          this.enemyCurrentHp = Math.min(this.enemyMaxHp, this.enemyCurrentHp + healAmt);
+          this.updateEnemyHpBar();
+          this.enemyGrassHealCd = 4;
+          this.showFloatingHeal(this.enemyContainer.x, this.enemyContainer.y - 60, healAmt);
+          this.statusText.setText(`🌿 ${this.data_.mobName} 자기회복! HP +${healAmt}`).setColor('#5ddb7a');
+        }
+      }
+
+      // Earth: 매 턴 방어막 10 생성 (플레이어 공격 흡수)
+      if (elem === 'earth') {
+        this.enemyEarthShield += 10;
+        this.statusText.setText(`🪨 ${this.data_.mobName} 방어막 생성! 쉴드 +10 (현재 ${this.enemyEarthShield})`).setColor('#c8a04a');
+      }
+
+      // Lightning: 기절 면역은 applyCardEffects에서 처리됨
+    }
+
     // ── BOSS_FINAL 페이즈 패턴 ───────────────────────────────────────────────
     if (this.data_.isFinalBoss) {
       this.finalBossPatternTurn++;
@@ -1453,8 +1504,23 @@ export default class BattleScene extends Phaser.Scene {
   // BOSS_FINAL 전용 메서드
   // ───────────────────────────────────────────────────────────────────────────
 
-  /** BOSS_FINAL: 보스 쉴드 흡수 후 HP 감소. 실제 피해량 반환 */
+  /** 보스/속성 쉴드 흡수 후 적 HP 감소. 실제 피해량 반환 */
   private damageEnemy(rawDmg: number): number {
+    // Earth 방어막 흡수 (일반/보스 earth 속성)
+    if (!this.data_.isFinalBoss && this.enemyEarthShield > 0) {
+      const absorbed = Math.min(this.enemyEarthShield, rawDmg);
+      this.enemyEarthShield -= absorbed;
+      rawDmg -= absorbed;
+      if (absorbed > 0 && rawDmg === 0) {
+        const bx = this.enemyContainer.x;
+        const by = this.enemyContainer.y - 40;
+        const t = this.add.text(bx, by, `🪨 BLOCK`, {
+          fontFamily: FONT_B, fontSize: '18px', color: '#c8a04a', stroke: '#000', strokeThickness: 3
+        }).setOrigin(0.5);
+        this.tweens.add({ targets: t, y: by - 40, alpha: 0, duration: 800, onComplete: () => t.destroy() });
+      }
+    }
+
     if (this.data_.isFinalBoss && this.finalBossShield > 0) {
       const absorbed = Math.min(this.finalBossShield, rawDmg);
       this.finalBossShield -= absorbed;
@@ -1811,6 +1877,22 @@ export default class BattleScene extends Phaser.Scene {
       this.time.delayedCall(600, () => this.endBattle(false));
       return;
     }
+
+    // ── 플레이어 화상 처리 (fire 적 속성 패턴) ──────────────────────────────
+    if (this.playerBurnDur > 0) {
+      const burnDmg = this.playerBurnValue;
+      this.playerCurrentHp = Math.max(0, this.playerCurrentHp - burnDmg);
+      this.updatePlayerHpBar();
+      this.showFloatingDamage(this.playerSprite.x, this.playerSprite.y - 40, burnDmg, false, '#ff6600');
+      this.statusText.setText(`🔥 화상! 내 HP -${burnDmg} (${this.playerBurnDur}턴 남음)`).setColor('#ff6600');
+      AudioManager.play('BURN_TICK');
+      this.playerBurnDur--;
+      if (this.playerCurrentHp <= 0) {
+        this.time.delayedCall(600, () => this.endBattle(false));
+        return;
+      }
+    }
+
     this.currentTurn++;
     if (this.data_.isFinalBoss) {
       // FINAL BOSS: MAX_TURNS 체크 없이 페이즈 턴 표시
@@ -1858,8 +1940,13 @@ export default class BattleScene extends Phaser.Scene {
           AudioManager.play('DEBUFF');
           break;
         case 'stun':
-          this.enemyStunned = true;
-          AudioManager.play('STUN');
+          // lightning 속성 적은 기절 면역
+          if (this.data_.mapElement === 'lightning') {
+            this.statusText.setText(`⚡ ${this.data_.mobName}은 기절에 면역!`).setColor('#ffe033');
+          } else {
+            this.enemyStunned = true;
+            AudioManager.play('STUN');
+          }
           break;
         case 'armor_break':
           this.enemyArmorBreak += eff.value;

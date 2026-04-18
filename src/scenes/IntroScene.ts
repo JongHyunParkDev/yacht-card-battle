@@ -66,6 +66,16 @@ export default class IntroScene extends Phaser.Scene {
       });
     };
 
+    // ── 패시브 강화 정의 ──────────────────────────────────────────────────────
+    const PASSIVE_DEFS = [
+      { id: 'maxHp',     labelKey: 'upgradeMaxHp',     cost: 100, maxLv: 5 },
+      { id: 'atk',       labelKey: 'upgradeAtk',        cost: 80,  maxLv: 5 },
+      { id: 'def',       labelKey: 'upgradeDef',        cost: 80,  maxLv: 5 },
+      { id: 'crit',      labelKey: 'upgradeCrit',       cost: 120, maxLv: 5 },
+      { id: 'cardMult',  labelKey: 'upgradeCardMult',   cost: 200, maxLv: 3 },
+      { id: 'equipSlot', labelKey: 'upgradeEquipSlot',  cost: 300, maxLv: 2 },
+    ] as const;
+
     // 레거시 패널 참조 + 크기 (updateLayout에서 위치 갱신용)
     let legacyPanel: Phaser.GameObjects.Container | null = null;
     let legacyPanelW = 280;
@@ -201,11 +211,159 @@ export default class IntroScene extends Phaser.Scene {
       cont.setPosition(this.scale.width - panelW - 16, this.scale.height - panelH - 16);
     };
 
+    // ── 패시브 강화 오버레이 ──────────────────────────────────────────────────
+    const showPassiveUpgradeOverlay = (
+      passiveUpgrades: Record<string, number>,
+      totalGoldRef: { value: number },
+      onClose: () => void,
+    ) => {
+      const { width, height } = this.scale;
+      const overlay = this.add.container(0, 0).setDepth(100);
+
+      // 반투명 배경 (클릭 시 닫기)
+      const dim = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.75)
+        .setInteractive();
+      dim.on('pointerdown', () => { overlay.destroy(); onClose(); });
+      overlay.add(dim);
+
+      // 패널
+      const PW = Math.min(660, width - 40);
+      const ITEM_H = 52;
+      const PH = 80 + 14 + PASSIVE_DEFS.length * ITEM_H + 20 + 50;
+      const px = (width - PW) / 2;
+      const py = (height - PH) / 2;
+
+      const panelBg = this.add.graphics();
+      panelBg.fillStyle(0x0a0e14, 0.97);
+      panelBg.lineStyle(2, 0xd4af37, 0.8);
+      panelBg.fillRoundedRect(px, py, PW, PH, 12);
+      panelBg.strokeRoundedRect(px, py, PW, PH, 12);
+      overlay.add(panelBg);
+
+      // 제목
+      const titleTxt = this.add.text(px + PW / 2, py + 24, i18n.t('passiveUpgradeTitle'), {
+        fontFamily: 'SBAggroB', fontSize: '14px', color: '#d4af37',
+        wordWrap: { width: PW - 24 }, align: 'center',
+      }).setOrigin(0.5, 0);
+      overlay.add(titleTxt);
+
+      // 구분선
+      const divG = this.add.graphics();
+      divG.lineStyle(1, 0xd4af37, 0.3);
+      divG.lineBetween(px + 16, py + 58, px + PW - 16, py + 58);
+      overlay.add(divG);
+
+      // 보유 골드 표시 (갱신 가능하게 참조 보관)
+      const goldTxt = this.add.text(px + PW - 16, py + 68, `${i18n.t('yourGold')}:  ${totalGoldRef.value} G`, {
+        fontFamily: 'SBAggroM', fontSize: '15px', color: '#d4af37',
+      }).setOrigin(1, 0.5);
+      overlay.add(goldTxt);
+
+      // 강화 항목 행들
+      const rowStartY = py + 80 + 14;
+      const buyBtns: Phaser.GameObjects.Text[] = [];
+
+      PASSIVE_DEFS.forEach((def, i) => {
+        const ry = rowStartY + i * ITEM_H;
+        const lv = passiveUpgrades[def.id] ?? 0;
+        const nextCost = def.cost * (lv + 1);
+        const maxed = lv >= def.maxLv;
+
+        // 행 배경 (짝수/홀수 줄무늬)
+        const rowBg = this.add.graphics();
+        rowBg.fillStyle(i % 2 === 0 ? 0x111820 : 0x0d1218, 0.6);
+        rowBg.fillRect(px + 8, ry, PW - 16, ITEM_H - 2);
+        overlay.add(rowBg);
+
+        // 이름
+        const nameTxt = this.add.text(px + 18, ry + ITEM_H / 2, i18n.t(def.labelKey), {
+          fontFamily: 'SBAggroM', fontSize: '15px', color: maxed ? '#888888' : '#e6d8b8',
+        }).setOrigin(0, 0.5);
+        overlay.add(nameTxt);
+
+        // 레벨 표시
+        const lvTxt = this.add.text(px + PW * 0.52, ry + ITEM_H / 2,
+          `${i18n.t('upgradeLevel')} ${lv} / ${def.maxLv}`, {
+          fontFamily: 'SBAggroM', fontSize: '14px', color: maxed ? '#888888' : '#aaaaaa',
+        }).setOrigin(0.5, 0.5);
+        overlay.add(lvTxt);
+
+        // 비용 / 최대 레이블
+        const costTxt = this.add.text(px + PW * 0.73, ry + ITEM_H / 2,
+          maxed ? '' : `${nextCost} G`, {
+          fontFamily: 'SBAggroM', fontSize: '14px', color: '#d4af37',
+        }).setOrigin(0.5, 0.5);
+        overlay.add(costTxt);
+
+        // 구매 버튼
+        const btnLabel = maxed ? i18n.t('upgradeMaxed') : i18n.t('upgradeBuy');
+        const btnColor = maxed ? '#555555' : '#1a1a1a';
+        const btnBg    = maxed ? '#444444' : '#d4af37';
+        const btn = this.add.text(px + PW - 24, ry + ITEM_H / 2, btnLabel, {
+          fontFamily: 'SBAggroB', fontSize: '13px',
+          color: btnColor, backgroundColor: btnBg,
+          padding: { x: 12, y: 6 },
+        }).setOrigin(1, 0.5);
+
+        if (!maxed) {
+          btn.setInteractive({ useHandCursor: true });
+          btn.on('pointerover', () => btn.setBackgroundColor('#f5cc4a'));
+          btn.on('pointerout',  () => btn.setBackgroundColor('#d4af37'));
+          btn.on('pointerdown', async () => {
+            const curLv  = passiveUpgrades[def.id] ?? 0;
+            const cost   = def.cost * (curLv + 1);
+            if (totalGoldRef.value < cost) {
+              // 골드 부족 — 흔들기 애니메이션
+              this.tweens.add({
+                targets: goldTxt, x: goldTxt.x + 6, duration: 60,
+                yoyo: true, repeat: 3,
+              });
+              return;
+            }
+            AudioManager.play('CLICK');
+            totalGoldRef.value -= cost;
+            passiveUpgrades[def.id] = curLv + 1;
+
+            // legacy.json 저장 (passiveUpgrades + totalGold 함께)
+            // @ts-ignore
+            if (typeof require !== 'undefined') {
+              try {
+                const { ipcRenderer } = require('electron');
+                await ipcRenderer.invoke('save-passive-upgrades', {
+                  passiveUpgrades,
+                  totalGold: totalGoldRef.value,
+                });
+              } catch (e) {
+                console.error('패시브 저장 실패:', e);
+              }
+            }
+
+            // UI 갱신 (오버레이 재빌드)
+            overlay.destroy();
+            showPassiveUpgradeOverlay(passiveUpgrades, totalGoldRef, onClose);
+          });
+        }
+        overlay.add(btn);
+        buyBtns.push(btn);
+      });
+
+      // 닫기 버튼
+      const closeBtn = this.add.text(px + PW / 2, py + PH - 26, '✕  닫기', {
+        fontFamily: 'SBAggroM', fontSize: '16px', color: '#8a7060',
+        padding: { x: 20, y: 8 },
+      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+      closeBtn.on('pointerover', () => closeBtn.setColor('#d4af37'));
+      closeBtn.on('pointerout',  () => closeBtn.setColor('#8a7060'));
+      closeBtn.on('pointerdown', () => { overlay.destroy(); onClose(); });
+      overlay.add(closeBtn);
+    };
+
     // 일렉트론 환경에서 세이브 파일 존재 여부 + 레거시 로드
     const initButtons = async () => {
       let hasSaveFile = false;
       let totalGold   = 0;
       let allEquipment: string[] = [];
+      let passiveUpgrades: Record<string, number> = {};
 
       // @ts-ignore
       if (typeof require !== 'undefined') {
@@ -216,8 +374,9 @@ export default class IntroScene extends Phaser.Scene {
           ]);
           const legacyRes = await ipcRenderer.invoke('load-legacy');
           if (legacyRes.success && legacyRes.data) {
-            totalGold    = legacyRes.data.totalGold    ?? 0;
-            allEquipment = legacyRes.data.allEquipment ?? [];
+            totalGold       = legacyRes.data.totalGold    ?? 0;
+            allEquipment    = legacyRes.data.allEquipment ?? [];
+            passiveUpgrades = legacyRes.data.passiveUpgrades ?? {};
           }
         } catch (e) {
           console.error('초기 로드 실패:', e);
@@ -241,17 +400,27 @@ export default class IntroScene extends Phaser.Scene {
         goScene('MainScene', { isContinue: true });
       }, hasSaveFile);
 
-      // 3. 카드 도감
+      // 3. 영구 강화
+      createButton(i18n.t('passiveUpgrade'), () => {
+        const goldRef = { value: totalGold };
+        showPassiveUpgradeOverlay(passiveUpgrades, goldRef, () => {
+          // 오버레이 닫힌 후 골드 갱신 반영
+          totalGold = goldRef.value;
+          buildLegacyPanel(totalGold, allEquipment);
+        });
+      });
+
+      // 4. 카드 도감
       createButton(i18n.t('cardGallery'), () => {
         goScene('CardGalleryScene');
       });
 
-      // 4. 설정
+      // 5. 설정
       createButton(i18n.t('settings'), () => {
         goScene('SettingsScene');
       });
 
-      // 5. 게임 종료
+      // 6. 게임 종료
       createButton(i18n.t('exit'), () => {
         if (typeof window !== 'undefined' && window.close) window.close();
       });

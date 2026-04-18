@@ -178,6 +178,37 @@ export default class MainScene extends Phaser.Scene {
     this.completedElements = (state as any).completedElements || [];
     this.currentMapElement = (state as any).mapElement ?? 'water';
 
+    // 새 게임 시 패시브 강화 스탯 가산 (영구 강화 — IntroScene에서 골드 소비)
+    if (!this.isContinue) {
+      // @ts-ignore
+      if (typeof require !== 'undefined') {
+        try {
+          const { ipcRenderer } = require('electron');
+          const legacyRes = await ipcRenderer.invoke('load-legacy');
+          if (legacyRes.success && legacyRes.data?.passiveUpgrades) {
+            const pu = legacyRes.data.passiveUpgrades as Record<string, number>;
+            const maxHpLv    = pu.maxHp     ?? 0;
+            const atkLv      = pu.atk       ?? 0;
+            const defLv      = pu.def       ?? 0;
+            const critLv     = pu.crit      ?? 0;
+            const cardMultLv = pu.cardMult  ?? 0;
+            const equipSlotLv = pu.equipSlot ?? 0;
+
+            if (maxHpLv > 0) {
+              const bonus = maxHpLv * 10;
+              this.playerMaxHp += bonus;
+              this.playerHp    += bonus;
+            }
+            if (atkLv > 0)      this.playerAtk  += atkLv;
+            if (defLv > 0)      this.playerDef  += defLv;
+            if (critLv > 0)     this.playerCrit  = Math.min(100, this.playerCrit + critLv * 2);
+            if (cardMultLv > 0) this.playerCardMult = parseFloat((this.playerCardMult + cardMultLv * 0.05).toFixed(4));
+            if (equipSlotLv > 0) this.maxEquipSlots += equipSlotLv;
+          }
+        } catch (e) { console.warn('패시브 강화 로드 실패', e); }
+      }
+    }
+
     // 만약 새 게임(isContinue === false)이고 초기 장비가 존재한다면, 해당 장비의 스탯을 기본 스탯에 적용
     if (!this.isContinue && this.playerEquipment.length > 0) {
       this.playerEquipment.forEach(eqId => {
@@ -269,9 +300,19 @@ export default class MainScene extends Phaser.Scene {
 
   private playMainBGM() {
     this.bgmStarted = true;
-    if (!this.sound.get('bgm_main')?.isPlaying) {
-      this.sound.stopAll();
-      this.sound.play('bgm_main', { loop: true, volume: AudioManager.bgmVol });
+    const doPlay = () => {
+      if (!this.sound.get('bgm_main')?.isPlaying) {
+        this.sound.stopAll();
+        this.sound.play('bgm_main', { loop: true, volume: AudioManager.bgmVol });
+      }
+    };
+    // Phaser의 WebAudio 컨텍스트가 suspended 상태일 경우 resume 후 재생
+    // (씬 전환 직후 컨텍스트가 suspended되어 무음 실패하는 문제 방지)
+    const waSoundMgr = this.sound as Phaser.Sound.WebAudioSoundManager;
+    if (waSoundMgr.context?.state === 'suspended') {
+      waSoundMgr.context.resume().then(doPlay).catch(doPlay);
+    } else {
+      doPlay();
     }
   }
 

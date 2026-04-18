@@ -80,6 +80,25 @@ function createWindow () {
     }
   });
 
+  // 패시브 강화 저장 (IntroScene에서 골드 소비 후 호출)
+  // data: { passiveUpgrades: Record<string,number>, totalGold: number }
+  ipcMain.handle('save-passive-upgrades', async (event, data) => {
+    try {
+      const legacyPath = path.join(app.getPath('userData'), 'legacy.json');
+      let legacy = { runs: [], totalGold: 0, allEquipment: [], currentGold: 0, currentEquipment: [], passiveUpgrades: {} };
+      if (fs.existsSync(legacyPath)) {
+        try { legacy = JSON.parse(fs.readFileSync(legacyPath, 'utf-8')); } catch {}
+      }
+      legacy.passiveUpgrades = data.passiveUpgrades;
+      legacy.totalGold       = data.totalGold;
+      fs.writeFileSync(legacyPath, JSON.stringify(legacy, null, 2), 'utf-8');
+      return { success: true };
+    } catch (e) {
+      console.error('Passive upgrades save failed:', e);
+      return { success: false, error: e.message };
+    }
+  });
+
   // 현재 런의 골드/장비 즉시 저장 (런 중에도 지속됨)
   ipcMain.handle('save-persistent', async (event, data) => {
     try {
@@ -126,10 +145,16 @@ function createWindow () {
     }
   });
 
-  // 세이브 파일 존재 여부 확인
+  // 세이브 파일 존재 여부 확인 (mapHash 필드가 있는 유효한 세이브인지 체크)
   ipcMain.handle('check-save-file', async () => {
     const savePath = path.join(app.getPath('userData'), 'savegame.json');
-    return fs.existsSync(savePath);
+    if (!fs.existsSync(savePath)) return false;
+    try {
+      const data = JSON.parse(fs.readFileSync(savePath, 'utf-8'));
+      return !!(data && data.mapHash);
+    } catch {
+      return false;
+    }
   });
 
   // 설정 로드
