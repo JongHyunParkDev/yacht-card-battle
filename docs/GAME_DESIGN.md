@@ -251,22 +251,19 @@ dmg = baseVal;
   - lightning: 기절 면역 (applyCardEffects에서 stun 차단)
   - earth: 매 턴 방어막 10 생성 (damageEnemy에서 흡수)
 - [x] **게임 패배 후 이어하기 버그 수정** — check-save-file이 mapHash 존재 여부로 유효성 검증 ✅ 2026-04-18
-- [ ] **HEART 이벤트 재조정** — "소 희생(-5HP, +5%)"이 항상 이득인 구조 수정
-  - HP 10 미만 시 소 희생 비활성화, 또는 비용을 -8 HP로 상향
+- [x] **HEART 이벤트 재조정** — 고정 HP 비용 → 현재 HP 비율(30%/50%/80%) 차감으로 변경 ✅ 2026-04-21
 
 ---
 
 ### 🟡 단기 — 게임을 훨씬 풍부하게
 
 - [x] **적 스탯 스케일링 구현** — mapStage×0.25(HP) / ×0.20(ATK) / ×0.15(DEF) BattleScene.ts:208 ✅ 2026-04-16
-- [ ] **Guardian 방어막 지속 구조 수정** — 방어막이 1턴 이상 지속 가능해야 Guardian이 의미 있음
-  - 옵션 A: 쉴드를 다음 턴까지 50% 유지
-  - 옵션 B: Guardian 전용 — 사용하지 않은 쉴드가 다음 턴으로 이월
+- [x] **Guardian 방어막 지속 구조 수정** — 적 공격 후에도 기본 방어막 5 유지 (BattleScene.ts 적 공격 처리부) ✅ 2026-04-21
 - [x] **덱 카드 제거 기능** — NodeEventScene.ts:1868 `removeCardId` + MainScene.ts:1514 `removeOneDeckCard` 구현됨 ✅ 2026-04-16
 - [x] **CharacterSelectScene 시작 장비 선택** — CharacterSelectScene.ts:570 `selectedEquip → startEquipment` 전달 구현됨 ✅ 2026-04-16
-- [ ] **시작 덱 커스터마이징** — 캐릭터 선택 화면에서 "시작 속성 선택" 또는 "제거할 카드 선택" 제공
-- [ ] **SHIELD_UP 이벤트 재설계** — shieldMult +0.2가 HP 28% 회복보다 항상 약한 구조 개선
-- [ ] **Lancer 투창 드로우 보완** — 투창 카드가 없을 때 패시브 활용 불가 문제 해소 방안
+- [x] **시작 덱 커스터마이징** — 캐릭터 선택 화면 "덱 정제" 버튼, 20G/장 제거 구매, MainScene removedCounts 적용 ✅ 2026-04-21
+- [x] **SHIELD_UP 이벤트 재설계** — shieldMult +0.5로 상향 (×1.5 강화) ✅ 2026-04-21
+- [x] **Lancer 투창 드로우 보완** — 보장 드로우 로직 제거 (덱에 투창 5장으로 충분) ✅ 2026-04-21
 
 ---
 

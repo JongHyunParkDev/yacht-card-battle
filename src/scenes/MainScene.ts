@@ -76,6 +76,7 @@ type NodeSprite = Phaser.GameObjects.Sprite | Phaser.GameObjects.Graphics;
 export default class MainScene extends Phaser.Scene {
   // ── 상태 필드 ────────────────────────────────────────────────────────────────
   private isContinue    = false;
+  private removedCounts: Record<number, number> = {};
   private isPaused      = false;
   private isMoving      = false;
   private currentNodeId = -1;
@@ -117,9 +118,10 @@ export default class MainScene extends Phaser.Scene {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /** CharacterSelectScene에서 전달된 data를 받습니다 */
-  init(data: { isContinue?: boolean; character?: CharacterDef; startEquipment?: string[] }) {
-    this.isContinue = data?.isContinue ?? false;
-    this.character  = data?.character;
+  init(data: { isContinue?: boolean; character?: CharacterDef; startEquipment?: string[]; removedCounts?: Record<number, number> }) {
+    this.isContinue    = data?.isContinue ?? false;
+    this.removedCounts = data?.removedCounts ?? {};
+    this.character     = data?.character;
     if (data?.startEquipment && data.startEquipment.length > 0) {
       this.playerEquipment = [...data.startEquipment];
     }
@@ -689,7 +691,12 @@ export default class MainScene extends Phaser.Scene {
       ],
     };
 
-    this.playerDeck = decks[weapon] ?? decks['swordShield'];
+    const baseDeck = decks[weapon] ?? decks['swordShield'];
+    this.playerDeck = Object.keys(this.removedCounts).length > 0
+      ? baseDeck
+          .map(e => ({ ...e, count: Math.max(0, e.count - (this.removedCounts[e.card.id] ?? 0)) }))
+          .filter(e => e.count > 0)
+      : baseDeck;
   }
 
   /** 캐릭터 idle 애니메이션이 없으면 생성 (씬 전환 후 유실 방지) */

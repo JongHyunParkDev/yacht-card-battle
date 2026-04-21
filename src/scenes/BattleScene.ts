@@ -722,32 +722,6 @@ export default class BattleScene extends Phaser.Scene {
       this.hand = [];
     }
 
-    // [New Logic] Ranger/Lancer: 보장된 전용 카드 먼저 뽑기
-    if (this.data_.characterWeapon === 'bow' || this.data_.characterWeapon === 'spear') {
-      const targetId = this.data_.characterWeapon === 'bow' ? 28 : 27; // 28: Arrow, 27: Spear
-      
-      // 1. drawPile에서 찾기
-      let targetIdx = this.drawPile.findIndex(c => c.id === targetId);
-      
-      // 2. drawPile에 없으면 discardPile에서 찾기
-      if (targetIdx === -1) {
-        const discIdx = this.discardPile.findIndex(c => c.id === targetId);
-        if (discIdx !== -1) {
-          // reshuffle (drawPile로 합친 뒤 random shuffle)
-          this.drawPile.push(...this.discardPile);
-          this.discardPile = [];
-          this.drawPile.sort(() => Math.random() - 0.5);
-          targetIdx = this.drawPile.findIndex(c => c.id === targetId);
-        }
-      }
-      
-      // 3. 찾았으면 손패로 (HAND_SIZE 1개 차지)
-      if (targetIdx !== -1) {
-        const card = this.drawPile.splice(targetIdx, 1)[0];
-        this.hand.push(card);
-      }
-    }
-
     // 나머지 채우기
     while (this.hand.length < HAND_SIZE) {
       if (this.drawPile.length === 0) {
@@ -1388,9 +1362,13 @@ export default class BattleScene extends Phaser.Scene {
       enemyDmg = Math.max(0, enemyDmg - this.currentTurnDefense);
     }
 
-    // 쉴드 뱃지 숨기기 (적 턴 시작 = 쉴드 소멸)
-    this.currentTurnDefense = 0;
-    this.shieldBadge?.setVisible(false);
+    // Guardian: 적 공격 후에도 기본 방어막 5 유지
+    this.currentTurnDefense = this.data_.characterWeapon === 'swordShield' ? 5 : 0;
+    if (this.currentTurnDefense > 0) {
+      this.updateShieldBadge();
+    } else {
+      this.shieldBadge?.setVisible(false);
+    }
 
     console.log(`--- [적 타격 이벤트] ---`);
     console.log(`> 적 기초 공격력: ${enemyAtkOriginal}`);

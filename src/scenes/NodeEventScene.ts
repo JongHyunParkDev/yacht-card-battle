@@ -684,12 +684,16 @@ export default class NodeEventScene extends Phaser.Scene {
     }).setOrigin(0.5);
     this.root.add([title, divider, hpTxt, desc]);
 
-    // 희생 티어 정의
-    const tiers = [
-      { hpCost: 5,  mult: 1.05, label: '소 희생  −5 HP  →  +5%', color: 0x8b4513 },
-      { hpCost: 10, mult: 1.10, label: '중 희생  −10 HP  →  +10%', color: 0x8b0000 },
-      { hpCost: 20, mult: 1.20, label: '대 희생  −20 HP  →  +20%', color: 0x4a0000 },
+    // 희생 티어 정의 (현재 HP 비율 기반)
+    const tierDefs = [
+      { pct: 0.30, mult: 1.05, label: '소 희생', color: 0x8b4513 },
+      { pct: 0.50, mult: 1.10, label: '중 희생', color: 0x8b0000 },
+      { pct: 0.80, mult: 1.20, label: '대 희생', color: 0x4a0000 },
     ];
+    const tiers = tierDefs.map(t => ({
+      ...t,
+      hpCost: Math.max(1, Math.floor(playerHp * t.pct)),
+    }));
 
     const BW = Math.round(W * 0.40);
     const BH = 52;
@@ -697,15 +701,18 @@ export default class NodeEventScene extends Phaser.Scene {
     const gap = H * 0.11;
 
     tiers.forEach((tier, i) => {
-      const canUse = playerHp > tier.hpCost;
-      const btn = this.makeButton(0, startY + i * gap, tier.label, tier.color, () => {
+      const afterHp = playerHp - tier.hpCost;
+      const canUse = afterHp >= 1;
+      const pctLabel = `${Math.round(tier.pct * 100)}%`;
+      const btnLabel = `${tier.label}  −${pctLabel} HP (−${tier.hpCost})  →  +${((tier.mult - 1) * 100).toFixed(0)}%`;
+      const btn = this.makeButton(0, startY + i * gap, btnLabel, tier.color, () => {
         this.tweens.add({ targets: this.root, alpha: 0, duration: 180, onComplete: () => {
           this.root.removeAll(true);
           this.root.setAlpha(1);
           AudioManager.play('UPGRADE');
           const resTitle = this.makeHeader('row1_1', '제단 강화 완료!', -H * 0.20);
           const resDesc  = this.add.text(0, -H * 0.04,
-            `HP  ${playerHp}  →  ${Math.max(1, playerHp - tier.hpCost)}\n모든 카드 밸류  +${((tier.mult - 1) * 100).toFixed(0)}% 증가`, {
+            `HP  ${playerHp}  →  ${afterHp}\n모든 카드 밸류  +${((tier.mult - 1) * 100).toFixed(0)}% 증가`, {
             fontFamily: FONT_B, fontSize: '28px', color: '#2ecc71',
             align: 'center', lineSpacing: 10,
           }).setOrigin(0.5);
@@ -791,7 +798,7 @@ export default class NodeEventScene extends Phaser.Scene {
         this.root.add([
           this.makeHeader('row1_2', '방어막 강화', -H * 0.38),
           this.makeDivider(-H * 0.30, W * 0.7),
-          this.add.text(0, -H * 0.23, '강화할 방어 카드를 선택하세요.\n효과가 ×1.2 증가합니다.', {
+          this.add.text(0, -H * 0.23, '강화할 방어 카드를 선택하세요.\n효과가 ×1.5 증가합니다.', {
             fontFamily: FONT_M, fontSize: '17px', color: '#dddddd', align: 'center',
           }).setOrigin(0.5),
         ]);
@@ -811,7 +818,7 @@ export default class NodeEventScene extends Phaser.Scene {
                 fontFamily: FONT_B, fontSize: '24px', color: '#56b4f7', align: 'center',
               }).setOrigin(0.5),
               this.makeButton(0, H * 0.32, '확인', 0x1a3a6c, () => {
-                this.closeEvent({ upgradeCardId: entry.cardId, upgradeCardMult: 1.2 });
+                this.closeEvent({ upgradeCardId: entry.cardId, upgradeCardMult: 1.5 });
               }, Math.round(W * 0.28), 56),
             ]);
           }});

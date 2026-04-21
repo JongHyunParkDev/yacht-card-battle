@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { i18n } from '@src/utils/localization';
 import { getEquipmentById, formatEquipStats, EQUIP_GRADE_COLOR, EQUIP_GRADE_LABEL } from '@src/data/equipmentData';
+import { CARD_DATA_LIST } from '@src/data/cardData';
 import { AudioManager } from '@src/utils/Audio';
 import '@src/styles/colors.css';
 
@@ -99,12 +100,50 @@ export const CHARACTERS: CharacterDef[] = [
 // 스탯 최대 기준값 (바 정규화용)
 const STAT_MAX = { hp: 200, def: 50, atk: 100, crit: 100, critDmg: 2.5 };
 
+// 덱 정제 비용 (카드 1장 제거당)
+const DECK_CUSTOM_COST = 20;
+
+// 무기별 초기 덱 정의 (cardId = CARD_DATA_LIST 인덱스와 동일)
+const DECK_DEF_BY_WEAPON: Record<WeaponType, { cardId: number; count: number }[]> = {
+  swordShield: [
+    { cardId: 25, count: 3 }, { cardId: 26, count: 3 }, { cardId: 29, count: 2 },
+    { cardId: 20, count: 4 }, { cardId: 0,  count: 3 }, { cardId: 10, count: 2 },
+    { cardId: 5,  count: 1 }, { cardId: 15, count: 1 },
+  ],
+  bow: [
+    { cardId: 28, count: 5 }, { cardId: 25, count: 2 }, { cardId: 26, count: 2 },
+    { cardId: 29, count: 2 }, { cardId: 15, count: 3 }, { cardId: 10, count: 3 },
+    { cardId: 0,  count: 1 }, { cardId: 5,  count: 1 }, { cardId: 20, count: 1 },
+  ],
+  greatsword: [
+    { cardId: 25, count: 4 }, { cardId: 26, count: 1 }, { cardId: 29, count: 1 },
+    { cardId: 5,  count: 4 }, { cardId: 15, count: 3 }, { cardId: 0,  count: 2 },
+    { cardId: 20, count: 2 }, { cardId: 10, count: 1 },
+  ],
+  hammer: [
+    { cardId: 25, count: 3 }, { cardId: 26, count: 3 }, { cardId: 29, count: 2 },
+    { cardId: 20, count: 4 }, { cardId: 5,  count: 3 }, { cardId: 0,  count: 2 },
+    { cardId: 10, count: 1 }, { cardId: 15, count: 1 },
+  ],
+  spear: [
+    { cardId: 27, count: 5 }, { cardId: 25, count: 2 }, { cardId: 26, count: 2 },
+    { cardId: 29, count: 2 }, { cardId: 0,  count: 2 }, { cardId: 5,  count: 2 },
+    { cardId: 10, count: 2 }, { cardId: 15, count: 2 }, { cardId: 20, count: 1 },
+  ],
+};
+
 // ─── 씬 ───────────────────────────────────────────────────────────────────────
 
 export default class CharacterSelectScene extends Phaser.Scene {
   private selectedIndex   = 0;
   private allEquipment:   string[] = [];
   private selectedEquip:  string | null = null;
+
+  private originalGold    = 0;
+  private currentGold     = 0;
+  private removedCounts:  Record<number, number> = {};
+  private goldLabel:      Phaser.GameObjects.Text | null = null;
+  private deckCustomOverlay: Phaser.GameObjects.Container | null = null;
 
   /** 각 카드(배경 Graphics + Container) */
   private cardGraphics:   Phaser.GameObjects.Graphics[]  = [];
@@ -148,7 +187,9 @@ export default class CharacterSelectScene extends Phaser.Scene {
         const { ipcRenderer } = require('electron');
         const res = await ipcRenderer.invoke('load-legacy');
         if (res.success && res.data) {
-          this.allEquipment = res.data.allEquipment ?? [];
+          this.allEquipment  = res.data.allEquipment ?? [];
+          this.originalGold  = res.data.currentGold  ?? 0;
+          this.currentGold   = this.originalGold;
         }
       } catch {}
     }
@@ -548,6 +589,20 @@ export default class CharacterSelectScene extends Phaser.Scene {
 
 
   private buildButtons(width: number, height: number) {
+    // 골드 표시
+    this.goldLabel = this.add.text(width - 16, height - 38, `보유 골드: ${this.currentGold}G`, {
+      fontFamily: 'SBAggroB', fontSize: '16px', color: '#d4af37',
+    }).setOrigin(1, 0.5);
+
+    // 덱 정제 버튼
+    const deckBtn = this.add.text(width / 2, height - 82, `덱 정제  (${DECK_CUSTOM_COST}G / 장)`, {
+      fontFamily: 'SBAggroM', fontSize: '15px', color: '#99aaff',
+      backgroundColor: '#111122', padding: { x: 14, y: 7 },
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    deckBtn.on('pointerover', () => deckBtn.setColor('#ccd4ff'));
+    deckBtn.on('pointerout',  () => deckBtn.setColor('#99aaff'));
+    deckBtn.on('pointerdown', () => this.openDeckCustomPanel());
+
     // 게임 시작
     this.startBtn = this.add.text(width / 2, height - 38, i18n.t('startGame'), {
       fontFamily: 'SBAggroB',
@@ -559,15 +614,33 @@ export default class CharacterSelectScene extends Phaser.Scene {
 
     this.startBtn.on('pointerover',  () => this.startBtn.setBackgroundColor('#f5cc4a'));
     this.startBtn.on('pointerout',   () => this.startBtn.setBackgroundColor('#d4af37'));
-    this.startBtn.on('pointerdown',  () => {
+    this.startBtn.on('pointerdown',  async () => {
       AudioManager.play('REWARD');
       const char = CHARACTERS[this.selectedIndex];
+
+      // 골드 차감분 저장
+      if (this.currentGold !== this.originalGold) {
+        // @ts-ignore
+        if (typeof require !== 'undefined') {
+          try {
+            const { ipcRenderer } = require('electron');
+            const res = await ipcRenderer.invoke('load-legacy');
+            const legacyData = res?.data ?? {};
+            await ipcRenderer.invoke('save-persistent', {
+              currentGold:      this.currentGold,
+              currentEquipment: legacyData.currentEquipment ?? [],
+            });
+          } catch {}
+        }
+      }
+
       this.cameras.main.fadeOut(200, 0, 0, 0);
       this.cameras.main.once('camerafadeoutcomplete', () => {
         this.scene.start('MainScene', {
-          isContinue: false,
-          character: char,
+          isContinue:    false,
+          character:     char,
           startEquipment: this.selectedEquip ? [this.selectedEquip] : [],
+          removedCounts:  { ...this.removedCounts },
         });
       });
     });
@@ -591,12 +664,160 @@ export default class CharacterSelectScene extends Phaser.Scene {
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // 덱 정제 패널
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  private openDeckCustomPanel() {
+    if (this.deckCustomOverlay) {
+      this.deckCustomOverlay.destroy(true);
+      this.deckCustomOverlay = null;
+      return;
+    }
+
+    const { width, height } = this.scale;
+    const weapon  = CHARACTERS[this.selectedIndex].weapon;
+    const deckDef = DECK_DEF_BY_WEAPON[weapon];
+    const rowH    = 44;
+    const panelW  = Math.min(460, width - 40);
+    const panelH  = 78 + deckDef.length * rowH + 52;
+    const px      = (width  - panelW) / 2;
+    const py      = Math.max(10, (height - panelH) / 2);
+
+    const overlay = this.add.container(0, 0).setDepth(3000);
+    this.deckCustomOverlay = overlay;
+
+    // 어두운 배경
+    const dim = this.add.graphics();
+    dim.fillStyle(0x000000, 0.72);
+    dim.fillRect(0, 0, width, height);
+    overlay.add(dim);
+
+    // 패널 배경
+    const bg = this.add.graphics();
+    bg.fillStyle(0x0d1117, 1);
+    bg.lineStyle(2, 0x4a6fa8, 1);
+    bg.fillRoundedRect(px, py, panelW, panelH, 12);
+    bg.strokeRoundedRect(px, py, panelW, panelH, 12);
+    overlay.add(bg);
+
+    // 타이틀
+    overlay.add(this.add.text(width / 2, py + 24, '시작 덱 정제', {
+      fontFamily: 'SBAggroB', fontSize: '21px', color: '#d4af37',
+    }).setOrigin(0.5));
+    overlay.add(this.add.text(width / 2, py + 48, `카드 1장 제거 ${DECK_CUSTOM_COST}G  /  환불 가능`, {
+      fontFamily: 'SBAggroM', fontSize: '13px', color: '#666688',
+    }).setOrigin(0.5));
+
+    // 골드 (동적)
+    const goldTxt = this.add.text(px + panelW - 14, py + 24, `${this.currentGold}G`, {
+      fontFamily: 'SBAggroB', fontSize: '16px', color: '#f5cc4a',
+    }).setOrigin(1, 0.5);
+    overlay.add(goldTxt);
+
+    const refreshGold = () => {
+      goldTxt.setText(`${this.currentGold}G`);
+      this.goldLabel?.setText(`보유 골드: ${this.currentGold}G`);
+    };
+
+    // 카드 행
+    const rowRefreshFns: Array<() => void> = new Array(deckDef.length);
+    const rowY0 = py + 66;
+    deckDef.forEach((entry, i) => {
+      const card     = CARD_DATA_LIST[entry.cardId];
+      const name     = i18n.t(card.nameKey) || card.nameKey;
+      const origCnt  = entry.count;
+      const ry       = rowY0 + i * rowH;
+      const cy       = ry + rowH / 2;
+
+      if (i > 0) {
+        const sep = this.add.graphics();
+        sep.lineStyle(1, 0x1e2a3a, 1);
+        sep.lineBetween(px + 12, ry, px + panelW - 12, ry);
+        overlay.add(sep);
+      }
+
+      overlay.add(this.add.text(px + 16, cy, name, {
+        fontFamily: 'SBAggroM', fontSize: '15px', color: '#dddddd',
+      }).setOrigin(0, 0.5));
+
+      const countTxt = this.add.text(px + panelW * 0.60, cy, '', {
+        fontFamily: 'SBAggroM', fontSize: '14px', color: '#aaaaaa',
+      }).setOrigin(0.5);
+      overlay.add(countTxt);
+
+      const addBtn = this.add.text(px + panelW - 74, cy, '+', {
+        fontFamily: 'SBAggroB', fontSize: '20px', color: '#55ee55',
+        backgroundColor: '#002200', padding: { x: 8, y: 3 },
+      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+      overlay.add(addBtn);
+
+      const removeBtn = this.add.text(px + panelW - 24, cy, '−', {
+        fontFamily: 'SBAggroB', fontSize: '20px', color: '#ff5555',
+        backgroundColor: '#220000', padding: { x: 8, y: 3 },
+      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+      overlay.add(removeBtn);
+
+      const refresh = () => {
+        const r = this.removedCounts[entry.cardId] ?? 0;
+        countTxt.setText(`${origCnt - r} / ${origCnt}`);
+        countTxt.setColor(r > 0 ? '#ffaa44' : '#888888');
+        removeBtn.setAlpha(origCnt - r > 0 && this.currentGold >= DECK_CUSTOM_COST ? 1 : 0.3);
+        addBtn.setAlpha(r > 0 ? 1 : 0.3);
+        refreshGold();
+      };
+      refresh();
+
+      removeBtn.on('pointerdown', () => {
+        const r = this.removedCounts[entry.cardId] ?? 0;
+        if (origCnt - r <= 0 || this.currentGold < DECK_CUSTOM_COST) return;
+        this.currentGold -= DECK_CUSTOM_COST;
+        this.removedCounts[entry.cardId] = r + 1;
+        refresh();
+        // 다른 행의 구매 버튼 상태도 갱신
+        deckDef.forEach((_, j) => { if (j !== i) rowRefreshFns[j]?.(); });
+      });
+
+      addBtn.on('pointerdown', () => {
+        const r = this.removedCounts[entry.cardId] ?? 0;
+        if (r <= 0) return;
+        this.currentGold += DECK_CUSTOM_COST;
+        this.removedCounts[entry.cardId] = r - 1;
+        refresh();
+        deckDef.forEach((_, j) => { if (j !== i) rowRefreshFns[j]?.(); });
+      });
+
+      rowRefreshFns[i] = refresh;
+    });
+
+    // 완료 버튼
+    const doneY = rowY0 + deckDef.length * rowH + 20;
+    const doneBtn = this.add.text(width / 2, doneY, '완료', {
+      fontFamily: 'SBAggroB', fontSize: '19px', color: '#1a1a1a',
+      backgroundColor: '#d4af37', padding: { x: 44, y: 10 },
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    overlay.add(doneBtn);
+    doneBtn.on('pointerdown', () => {
+      overlay.destroy(true);
+      this.deckCustomOverlay = null;
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // 선택 / 갱신 로직
   // ─────────────────────────────────────────────────────────────────────────────
 
   private selectCharacter(idx: number) {
     const prev = this.selectedIndex;
     this.selectedIndex = idx;
+
+    // 캐릭터 변경 시 덱 정제 초기화 (환불)
+    if (prev !== idx) {
+      this.currentGold  = this.originalGold;
+      this.removedCounts = {};
+      this.goldLabel?.setText(`보유 골드: ${this.currentGold}G`);
+      this.deckCustomOverlay?.destroy(true);
+      this.deckCustomOverlay = null;
+    }
 
     const { cardW, cardH, cardY } = this.calcLayout(this.scale.width, this.scale.height);
 

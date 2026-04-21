@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1776317660286,
-  "projectRoot": "c:\\my\\ycb",
+  "lastScanned": 1776756746092,
+  "projectRoot": "C:\\my\\ycb",
   "techStack": {
     "languages": [
       {
@@ -74,7 +74,7 @@
       "path": "dist",
       "purpose": "Distribution/build output",
       "fileCount": 1,
-      "lastAccessed": 1776317660007,
+      "lastAccessed": 1776756746025,
       "keyFiles": [
         "index.html"
       ]
@@ -82,20 +82,18 @@
     "docs": {
       "path": "docs",
       "purpose": "Documentation",
-      "fileCount": 4,
-      "lastAccessed": 1776317660076,
+      "fileCount": 2,
+      "lastAccessed": 1776756746025,
       "keyFiles": [
         "audio_generation_prompts.md",
-        "evaluation.md",
-        "game_design_analysis.md",
-        "strategy_architecture.md"
+        "GAME_DESIGN.md"
       ]
     },
     "electron": {
       "path": "electron",
       "purpose": null,
       "fileCount": 2,
-      "lastAccessed": 1776317660078,
+      "lastAccessed": 1776756746048,
       "keyFiles": [
         "main.js",
         "preload.js"
@@ -105,7 +103,7 @@
       "path": "src",
       "purpose": "Source code",
       "fileCount": 1,
-      "lastAccessed": 1776317660081,
+      "lastAccessed": 1776756746049,
       "keyFiles": [
         "main.ts"
       ]
@@ -114,7 +112,7 @@
       "path": "dist\\assets",
       "purpose": "Static assets",
       "fileCount": 28,
-      "lastAccessed": 1776317660082,
+      "lastAccessed": 1776756746050,
       "keyFiles": [
         "attr-sprite-BLn2VF9D.png",
         "background_1-BKKYJhZu.png",
@@ -125,14 +123,14 @@
       "path": "src\\assets",
       "purpose": "Static assets",
       "fileCount": 0,
-      "lastAccessed": 1776317660087,
+      "lastAccessed": 1776756746051,
       "keyFiles": []
     },
     "src\\data": {
       "path": "src\\data",
       "purpose": "Data files",
       "fileCount": 5,
-      "lastAccessed": 1776317660089,
+      "lastAccessed": 1776756746052,
       "keyFiles": [
         "cardData.ts",
         "enemyData.ts",
@@ -143,7 +141,7 @@
       "path": "src\\utils",
       "purpose": "Utility functions",
       "fileCount": 3,
-      "lastAccessed": 1776317660091,
+      "lastAccessed": 1776756746053,
       "keyFiles": [
         "Audio.ts",
         "localization.ts",
@@ -154,20 +152,26 @@
   "hotPaths": [
     {
       "path": "src\\scenes\\NodeEventScene.ts",
-      "accessCount": 38,
-      "lastAccessed": 1776320397966,
+      "accessCount": 46,
+      "lastAccessed": 1776757411681,
       "type": "file"
     },
     {
       "path": "src\\scenes\\BattleScene.ts",
-      "accessCount": 25,
-      "lastAccessed": 1776320517279,
+      "accessCount": 30,
+      "lastAccessed": 1776757401107,
       "type": "file"
     },
     {
       "path": "docs\\GAME_DESIGN.md",
-      "accessCount": 14,
-      "lastAccessed": 1776319439281,
+      "accessCount": 18,
+      "lastAccessed": 1776757710790,
+      "type": "file"
+    },
+    {
+      "path": "src\\scenes\\CharacterSelectScene.ts",
+      "accessCount": 17,
+      "lastAccessed": 1776757522657,
       "type": "file"
     },
     {
@@ -175,6 +179,12 @@
       "accessCount": 9,
       "lastAccessed": 1776319155985,
       "type": "directory"
+    },
+    {
+      "path": "src\\scenes\\MainScene.ts",
+      "accessCount": 9,
+      "lastAccessed": 1776757545395,
+      "type": "file"
     },
     {
       "path": "CLAUDE.md",
@@ -187,6 +197,12 @@
       "accessCount": 4,
       "lastAccessed": 1776318359154,
       "type": "directory"
+    },
+    {
+      "path": "src\\data\\cardData.ts",
+      "accessCount": 4,
+      "lastAccessed": 1776757221424,
+      "type": "file"
     },
     {
       "path": "docs\\CARD_VALUE_RULES.md",
@@ -216,24 +232,6 @@
       "path": ".claude\\skills\\ycb-checklist\\SKILL.md",
       "accessCount": 1,
       "lastAccessed": 1776318536471,
-      "type": "file"
-    },
-    {
-      "path": "src\\scenes\\MainScene.ts",
-      "accessCount": 1,
-      "lastAccessed": 1776318747742,
-      "type": "file"
-    },
-    {
-      "path": "src\\scenes\\CharacterSelectScene.ts",
-      "accessCount": 1,
-      "lastAccessed": 1776318748038,
-      "type": "file"
-    },
-    {
-      "path": "src\\data\\cardData.ts",
-      "accessCount": 1,
-      "lastAccessed": 1776319395330,
       "type": "file"
     },
     {
